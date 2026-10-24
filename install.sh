@@ -4,7 +4,7 @@
 # shellcheck disable=SC1091,SC2034 # libs are sourced at runtime and use these globals
 set -Eeuo pipefail
 
-INSTALLER_VERSION="0.6.0"
+INSTALLER_VERSION="0.6.1"
 REPO_SLUG="Jaie55/hydrodactyl-installer"
 SCRIPT_REF="main"
 

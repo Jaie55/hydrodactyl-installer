@@ -100,6 +100,9 @@ MSG[err_compose_invalid]="El fichero docker-compose en %s no es válido; bórral
 # Nativo
 MSG[msg_apt_deps]="Instalando paquetes del sistema..."
 MSG[msg_php_ppa]="Añadiendo el repositorio de PHP (ondrej/php)..."
+MSG[msg_php_repo_fallback]="ondrej/php no tiene paquetes para %s; se usa packages.sury.org."
+MSG[step_panel_native]="Instalando el panel (nativo)"
+MSG[step_panel_docker]="Instalando el panel (Docker)"
 MSG[msg_php]="Instalando PHP 8.4 y sus extensiones..."
 MSG[msg_node]="Instalando Node.js y pnpm..."
 MSG[msg_composer]="Instalando Composer..."

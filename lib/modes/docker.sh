@@ -4,7 +4,7 @@
 # Docker install mode: uses the official docker-compose file.
 
 install_panel_docker() {
-    step "$(t menu_panel_docker)"
+    step "$(t step_panel_docker)"
 
     if [[ "$SOURCE" != "stable" ]]; then
         warn "$(t msg_docker_source_ignored)"

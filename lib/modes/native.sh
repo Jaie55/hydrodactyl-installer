@@ -12,7 +12,23 @@ install_panel_native() {
     fi
 
     local PHP_BIN="/usr/bin/php${PHP_VERSION}"
-    step "$(t menu_panel_native)"
+    local codename="$DISTRO_CODENAME"
+    local use_sury=0
+    step "$(t step_panel_native)"
+
+    # ondrej/php no longer publishes for every Ubuntu release (e.g. 26.04):
+    # fall back to packages.sury.org and drop a broken PPA entry if present.
+    if [[ "$DISTRO_ID" == "debian" ]]; then
+        use_sury=1
+    elif [[ -n "$codename" ]] && ! curl -fsI \
+        "https://ppa.launchpadcontent.net/ondrej/php/ubuntu/dists/${codename}/Release" \
+        >/dev/null 2>&1; then
+        use_sury=1
+    fi
+    if [[ "$use_sury" -eq 1 ]]; then
+        rm -f /etc/apt/sources.list.d/ondrej-ubuntu-php-*.sources \
+            /etc/apt/sources.list.d/ondrej-ubuntu-php-*.list
+    fi
 
     step "$(t msg_apt_deps)"
     pkg_update
@@ -20,13 +36,14 @@ install_panel_native() {
         nginx redis-server "${DB_KIND}-server"
 
     step "$(t msg_php_ppa)"
-    if [[ "$DISTRO_ID" == "debian" ]]; then
-        if [[ ! -f /etc/apt/sources.list.d/php.list ]]; then
-            curl -fsSL https://packages.sury.org/php/apt.gpg -o /etc/apt/trusted.gpg.d/php.gpg
-            printf 'deb https://packages.sury.org/php/ %s main\n' "$(lsb_release -sc)" \
-                >/etc/apt/sources.list.d/php.list
-            pkg_update
+    if [[ "$use_sury" -eq 1 ]]; then
+        if [[ "$DISTRO_ID" != "debian" ]]; then
+            warn "$(t msg_php_repo_fallback "$codename")"
         fi
+        curl -fsSL https://packages.sury.org/php/apt.gpg -o /etc/apt/trusted.gpg.d/php.gpg
+        printf 'deb https://packages.sury.org/php/ %s main\n' "$codename" \
+            >/etc/apt/sources.list.d/php.list
+        pkg_update
     elif ! grep -rqs "ondrej/php" /etc/apt/sources.list.d/; then
         LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php
         pkg_update

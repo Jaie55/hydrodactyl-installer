@@ -69,6 +69,7 @@ detect_os() {
     DISTRO_ID="${ID:-unknown}"
     DISTRO_NAME="${PRETTY_NAME:-$DISTRO_ID}"
     DISTRO_VERSION="${VERSION_ID:-}"
+    DISTRO_CODENAME="${VERSION_CODENAME:-}"
 
     case "$DISTRO_ID" in
         ubuntu | debian | linuxmint | pop) FAMILY=debian ;;

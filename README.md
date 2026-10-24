@@ -27,7 +27,7 @@
     <img src="https://shieldcn.dev/badge/Shellcheck-Passing-success.svg?logo=githubactions" alt="Shellcheck">
   </a>
   <a href="https://github.com/Jaie55/hydrodactyl-installer/releases">
-    <img src="https://shieldcn.dev/badge/Release-v0.6.0-181717.svg?logo=github" alt="Latest release: v0.6.0">
+    <img src="https://shieldcn.dev/badge/Release-v0.6.1-181717.svg?logo=github" alt="Latest release: v0.6.1">
   </a>
   <img src="https://shieldcn.dev/badge/Made%20with-Bash-1f425f.svg?logo=gnubash" alt="Made with Bash">
   <img src="https://shieldcn.dev/badge/Platform-Linux-f0b429.svg?logo=linux" alt="Platform Linux">
@@ -44,7 +44,7 @@ This script is not associated with the official Hydrodactyl, Blueprint or
 Pterodactyl projects.
 
 > [!NOTE]
-> v0.6.0 is an early release. The installer has been statically validated
+> v0.6.1 is an early release. The installer has been statically validated
 > (`bash -n`, Shellcheck, EN/ES key parity); test it on a throwaway VM before
 > using it on a production machine.
 
@@ -83,8 +83,8 @@ Operating systems supported by this installation script.
 | Fedora           | 40+     | :red_circle:       | :white_check_mark: | :red_circle:       |             |
 | Arch Linux       | -       | :red_circle:       | :white_check_mark: | :red_circle:       |             |
 
-- Native panel: Ubuntu 22.04+/Debian 12+, PHP 8.4 from ondrej/php (Ubuntu) or
-  packages.sury.org (Debian).
+- Native panel: Ubuntu 22.04+/Debian 12+, PHP 8.4 from ondrej/php (Ubuntu
+  releases that still have it) or packages.sury.org (Debian and newer Ubuntu).
 - Daemons: Ubuntu/Debian on amd64 or arm64 (the only architectures published
   by Wings and Elytra).
 - Docker panel: any distribution where Docker Engine can be installed.

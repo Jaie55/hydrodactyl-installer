@@ -100,6 +100,9 @@ MSG[err_compose_invalid]="The docker-compose file at %s is not valid; remove it 
 # Native
 MSG[msg_apt_deps]="Installing system packages..."
 MSG[msg_php_ppa]="Adding the PHP repository (ondrej/php)..."
+MSG[msg_php_repo_fallback]="ondrej/php has no packages for %s; using packages.sury.org."
+MSG[step_panel_native]="Installing the panel (native)"
+MSG[step_panel_docker]="Installing the panel (Docker)"
 MSG[msg_php]="Installing PHP 8.4 and extensions..."
 MSG[msg_node]="Installing Node.js and pnpm..."
 MSG[msg_composer]="Installing Composer..."
