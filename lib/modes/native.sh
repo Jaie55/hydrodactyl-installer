@@ -61,6 +61,14 @@ install_panel_native() {
         use_ssl=0
     fi
 
+    if [[ "$DEPLOY_ENV" == "production" ]]; then
+        if is_local_domain "$DOMAIN"; then
+            warn "$(t warn_prod_local "$DOMAIN")"
+            confirm "$(t confirm_prod_local)" n || exit 0
+        fi
+        [[ "$use_ssl" -eq 1 ]] || warn "$(t warn_prod_nossl)"
+    fi
+
     step "$(t msg_db_creating)"
     systemctl enable --now "${DB_KIND}"
     local dbpass
@@ -94,6 +102,11 @@ install_panel_native() {
     set_env DB_PASSWORD "$dbpass"
     set_env CACHE_STORE database
     set_env REDIS_HOST 127.0.0.1
+    if [[ "$DEPLOY_ENV" == "test" ]]; then
+        set_env APP_DEBUG true
+    else
+        set_env APP_DEBUG false
+    fi
 
     COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
     pnpm install --frozen-lockfile
@@ -104,6 +117,12 @@ install_panel_native() {
 
     step "$(t msg_migrate)"
     "$PHP_BIN" artisan migrate --seed --force
+
+    if [[ "$DEPLOY_ENV" == "production" ]]; then
+        "$PHP_BIN" artisan optimize
+    else
+        "$PHP_BIN" artisan optimize:clear
+    fi
 
     step "$(t msg_perms)"
     mkdir -p "$PANEL_DIR"/storage/{app/public,framework/{cache/data,sessions,views},logs}

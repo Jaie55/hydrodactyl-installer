@@ -4,7 +4,7 @@
 # shellcheck disable=SC1091,SC2034 # libs are sourced at runtime and use these globals
 set -Eeuo pipefail
 
-INSTALLER_VERSION="0.1.0"
+INSTALLER_VERSION="0.3.0"
 REPO_SLUG="Jaie55/hydrodactyl-installer"
 SCRIPT_REF="main"
 
@@ -70,7 +70,16 @@ SSL="0"
 DB_KIND="mariadb"
 ASSUME_YES="0"
 VERIFY="1"
+DEPLOY_ENV=""
 DAEMON_CONFIG=""
+AUTO_NODE="1"
+PANEL_URL=""
+API_KEY=""
+NODE_NAME=""
+NODE_FQDN=""
+NODE_MEMORY=""
+NODE_DISK=""
+NODE_PORTS=""
 
 usage() {
     cat <<EOF
@@ -81,6 +90,8 @@ Usage: bash install.sh [options]
 Panel
   --docker                  Install the panel with Docker
   --native                  Install the panel natively (Ubuntu/Debian)
+  --environment=production|test
+                            Strict mode for production, debug for test
   --source=stable|canary|custom
                             Panel source (default: stable)
   --repo=URL                Custom panel repository (implies --source=custom)
@@ -92,6 +103,15 @@ Panel
 Daemon
   --daemon=wings|elytra     Install a daemon (native)
   --daemon-config=PATH      Node config file downloaded from the panel
+  --panel-url=URL           Panel URL for automatic node setup
+  --api-key=KEY             Panel application API key (asked if omitted)
+  --node-name=NAME          Node name (default: hostname)
+  --node-fqdn=HOST          Node FQDN/IP reachable from the panel
+  --memory=MB               Node memory in MiB (default: detected)
+  --disk=MB                 Node disk in MiB (default: detected)
+  --ports=LIST              Allocations, comma separated
+                            (default: 25565-25665,27015-27150)
+  --no-node                 Do not create the node automatically
   --panel                   Install the panel too (used with --daemon)
 
 Other
@@ -108,10 +128,19 @@ parse_args() {
         case "$1" in
             --docker) MODE=docker ;;
             --native) MODE=native ;;
+            --environment=*) DEPLOY_ENV="${1#*=}" ;;
             --panel) INSTALL_PANEL=1 ;;
             --daemon=*) INSTALL_DAEMON=1; DAEMON_TYPE="${1#*=}" ;;
             --daemon) INSTALL_DAEMON=1; DAEMON_TYPE=wings ;;
             --daemon-config=*) DAEMON_CONFIG="${1#*=}" ;;
+            --panel-url=*) PANEL_URL="${1#*=}" ;;
+            --api-key=*) API_KEY="${1#*=}" ;;
+            --node-name=*) NODE_NAME="${1#*=}" ;;
+            --node-fqdn=*) NODE_FQDN="${1#*=}" ;;
+            --memory=*) NODE_MEMORY="${1#*=}" ;;
+            --disk=*) NODE_DISK="${1#*=}" ;;
+            --ports=*) NODE_PORTS="${1#*=}" ;;
+            --no-node) AUTO_NODE=0 ;;
             --source=*) SOURCE="${1#*=}" ;;
             --repo=*) CUSTOM_REPO="${1#*=}"; SOURCE=custom ;;
             --ref=*) CUSTOM_REF="${1#*=}" ;;
@@ -139,6 +168,10 @@ parse_args() {
     case "$DB_KIND" in
         mariadb | mysql) ;;
         *) die "Invalid database: $DB_KIND" ;;
+    esac
+    case "$DEPLOY_ENV" in
+        '' | production | test) ;;
+        *) die "Invalid environment: $DEPLOY_ENV (use production or test)" ;;
     esac
 }
 
@@ -184,6 +217,23 @@ interactive_menu() {
         4) INSTALL_PANEL=0; INSTALL_DAEMON=1; DAEMON_TYPE=wings ;;
         5) INSTALL_PANEL=0; INSTALL_DAEMON=1; DAEMON_TYPE=elytra ;;
         6) exit 0 ;;
+        *) die "$(t msg_invalid_choice)" ;;
+    esac
+}
+
+choose_environment() {
+    if [[ -n "$DEPLOY_ENV" || "$ASSUME_YES" -eq 1 || ! -t 0 ]]; then
+        DEPLOY_ENV="${DEPLOY_ENV:-production}"
+        return
+    fi
+
+    printf '\n%s%s%s:\n' "$C_BOLD" "$(t env_title)" "$C_RESET"
+    printf '  1) %s\n  2) %s\n' "$(t env_production)" "$(t env_test)"
+    local choice=''
+    read -r -p "$(t prompt_env_choice) [1]: " choice || true
+    case "${choice:-1}" in
+        1) DEPLOY_ENV='production' ;;
+        2) DEPLOY_ENV='test' ;;
         *) die "$(t msg_invalid_choice)" ;;
     esac
 }
@@ -240,6 +290,12 @@ main() {
     if [[ "$INSTALL_PANEL" == "1" ]]; then
         [[ -n "$MODE" ]] || die "$(t err_mode_required)"
         choose_source
+        choose_environment
+        if [[ "$DEPLOY_ENV" == "test" ]]; then
+            info "$(t msg_env_test)"
+        else
+            info "$(t msg_env_production)"
+        fi
         if [[ -z "$DOMAIN" ]]; then ask DOMAIN "$(t prompt_domain)"; fi
         if [[ -z "$PANEL_DIR" ]]; then ask PANEL_DIR "$(t prompt_panel_dir)" "/var/www/hydrodactyl"; fi
         confirm "$(t confirm_install)" y || exit 0

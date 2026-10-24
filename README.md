@@ -16,7 +16,7 @@
     <img src="https://shieldcn.dev/badge/Shellcheck-Passing-success.svg?logo=githubactions" alt="Shellcheck">
   </a>
   <a href="https://github.com/Jaie55/hydrodactyl-installer/releases">
-    <img src="https://shieldcn.dev/badge/Release-v0.1.0-181717.svg?logo=github" alt="Latest release: v0.1.0">
+    <img src="https://shieldcn.dev/badge/Release-v0.3.0-181717.svg?logo=github" alt="Latest release: v0.3.0">
   </a>
   <img src="https://shieldcn.dev/badge/Made%20with-Bash-1f425f.svg?logo=gnubash" alt="Made with Bash">
   <img src="https://shieldcn.dev/badge/Platform-Linux-f0b429.svg?logo=linux" alt="Platform Linux">
@@ -126,6 +126,7 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | -------------------------------- | --------------------------------------------------------------------------- |
 | `--docker`                       | Install the panel with Docker Compose                                       |
 | `--native`                       | Install the panel natively (nginx + PHP-FPM + MariaDB/MySQL)                |
+| `--environment=production\|test` | Production: debug off, config cached, strict domain/HTTPS warnings. Test: debug on, config not cached |
 | `--source=stable\|canary\|custom` | `stable` = latest release tag, `canary` = `main`, `custom` = `--repo`/`--ref` |
 | `--repo=URL`                     | Custom panel repository (implies `--source=custom`)                         |
 | `--ref=BRANCH`                   | Branch or tag for the custom repository                                     |
@@ -134,6 +135,13 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | `--db=mariadb\|mysql`            | Database engine for the native install                                      |
 | `--daemon=wings\|elytra`         | Install a daemon                                                            |
 | `--daemon-config=PATH`           | Node config file downloaded from the panel                                  |
+| `--panel-url=URL`                | Panel URL for automatic node setup (default `http://127.0.0.1`)             |
+| `--api-key=KEY`                  | Panel application API key (asked if omitted)                                |
+| `--node-name=NAME`               | Node name (default: hostname)                                               |
+| `--node-fqdn=HOST`               | Node FQDN/IP reachable from the panel (default: primary IP)                 |
+| `--memory=MB` / `--disk=MB`      | Node resources (default: detected)                                          |
+| `--ports=LIST`                   | Allocations, comma separated (default `25565-25665,27015-27150`)            |
+| `--no-node`                      | Do not create the node automatically                                        |
 | `--panel`                        | Install the panel too (with `--daemon`)                                     |
 | `--ssl`                          | Request a free Let's Encrypt certificate                                    |
 | `--no-verify`                    | Skip the final check that the panel answers (CI/local tests)                |
@@ -161,10 +169,17 @@ Re-running the native mode updates the checkout to the selected ref
 password from `.env` and re-applies the configuration.
 
 **Daemons** — installs Docker (required by both daemons), downloads the latest
-`wings` or `elytra` binary for your architecture, creates
-`/etc/pterodactyl/config.yml` from `--daemon-config` and installs the systemd
-unit. Without a config file the unit is created but not started: paste the node
-configuration from the panel and run `systemctl restart wings` (or `elytra`).
+`wings` or `elytra` binary for your architecture and installs the systemd unit.
+Then it configures the node automatically: with a panel application API key
+(Admin → Application API → Create) it creates the location, the node and the
+port allocations through the panel API, runs `wings configure` (or
+`elytra configure`) to fetch the node configuration and starts the service.
+If you pass `--daemon-config` the given file is used instead.
+
+For a panel on the same machine use `--panel-url=http://127.0.0.1`. Without a
+key the unit is created but not started; paste the node configuration from the
+panel into `/etc/pterodactyl/config.yml` and run `systemctl restart wings` (or
+`elytra`) afterwards.
 
 ## After installing
 
@@ -176,7 +191,7 @@ daemons, create a node in the panel to download its configuration.
 For a throwaway machine there is no need for a public domain or a certificate:
 
 ```bash
-sudo bash install.sh --native --domain panel.test --no-verify -y
+sudo bash install.sh --native --domain panel.test --environment=test --no-verify -y
 ```
 
 The installer verifies the panel against `127.0.0.1` with `curl --resolve`, so

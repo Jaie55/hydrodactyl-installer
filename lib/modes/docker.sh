@@ -16,6 +16,14 @@ install_panel_docker() {
         use_ssl=0
     fi
 
+    if [[ "$DEPLOY_ENV" == "production" ]]; then
+        if is_local_domain "$DOMAIN"; then
+            warn "$(t warn_prod_local "$DOMAIN")"
+            confirm "$(t confirm_prod_local)" n || exit 0
+        fi
+        [[ "$use_ssl" -eq 1 ]] || warn "$(t warn_prod_nossl)"
+    fi
+
     if ! has_cmd docker || ! docker compose version >/dev/null 2>&1; then
         warn "$(t msg_docker_missing)"
         confirm "$(t confirm_install_docker)" y || die "$(t msg_docker_missing)"
@@ -59,6 +67,11 @@ install_panel_docker() {
 
         if [[ -n "$le_email" ]]; then
             sed -i -e "s|# LE_EMAIL: \"\"|LE_EMAIL: \"$(escape_sed "$le_email")\"|" "$tmpdir/docker-compose.yml"
+        fi
+
+        if [[ "$DEPLOY_ENV" == "test" ]]; then
+            sed -i "/APP_ENV: 'production'/a\\
+            APP_DEBUG: 'true'" "$tmpdir/docker-compose.yml"
         fi
 
         cp "$tmpdir/docker-compose.yml" "$PANEL_DIR/docker-compose.yml"
