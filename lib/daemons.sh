@@ -87,7 +87,11 @@ auto_configure_node() {
     PANEL_URL="${PANEL_URL%/}"
 
     if [[ -z "$API_KEY" ]]; then
-        ask_secret API_KEY "$(t prompt_api_key)"
+        for _ in 1 2 3; do
+            ask_secret API_KEY "$(t prompt_api_key)"
+            [[ -n "$API_KEY" ]] && break
+            warn "$(t msg_api_key_required)"
+        done
     fi
     if [[ -z "$API_KEY" ]]; then
         warn "$(t msg_node_skipped)"
