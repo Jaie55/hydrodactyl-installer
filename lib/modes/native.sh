@@ -100,6 +100,7 @@ install_panel_native() {
 
     step "$(t msg_db_creating)"
     systemctl enable --now "${DB_KIND}"
+    systemctl enable --now redis-server || true
     local dbpass="$DB_PASS"
     if [[ -f "$PANEL_DIR/.env" ]] && grep -qE '^DB_PASSWORD=.+' "$PANEL_DIR/.env"; then
         dbpass="$(grep -E '^DB_PASSWORD=' "$PANEL_DIR/.env" | head -n1 | cut -d= -f2-)"
@@ -126,7 +127,7 @@ install_panel_native() {
     set_env DB_DATABASE "$DB_NAME"
     set_env DB_USERNAME "$DB_USER"
     set_env DB_PASSWORD "$dbpass"
-    set_env CACHE_STORE database
+    set_env CACHE_STORE file
     set_env REDIS_HOST 127.0.0.1
     if [[ "$DEPLOY_ENV" == "test" ]]; then
         set_env APP_DEBUG true
