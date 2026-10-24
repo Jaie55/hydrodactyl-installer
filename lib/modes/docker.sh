@@ -76,6 +76,7 @@ install_panel_docker() {
     local i appurl
     appurl="http://$DOMAIN"
     [[ "$use_ssl" -eq 1 ]] && appurl="https://$DOMAIN"
+    # shellcheck disable=SC2034 # loop counter only
     for i in $(seq 1 30); do
         if curl -fsS -o /dev/null --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/auth/login"; then
             ok "$(t msg_panel_url "$appurl")"

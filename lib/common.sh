@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
+# shellcheck disable=SC2034 # DISTRO_VERSION and ARCH are exported for callers
 
 # Shared helpers for every installer mode.
 

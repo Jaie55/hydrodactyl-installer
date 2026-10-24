@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
+# shellcheck disable=SC2034,SC2154 # data file: keys are consumed by lib/i18n.sh
 # Mensajes en castellano.
 
 MSG[msg_root_required]="Este instalador debe ejecutarse como root (prueba: sudo bash install.sh)."

@@ -79,7 +79,7 @@ install_panel_native() {
     local appurl
     if [[ "$use_ssl" -eq 1 ]]; then appurl="https://$DOMAIN"; else appurl="http://$DOMAIN"; fi
 
-    cd "$PANEL_DIR"
+    cd "$PANEL_DIR" || die "Cannot enter $PANEL_DIR"
     [[ -f .env ]] || cp .env.example .env
 
     set_env APP_ENV production
@@ -153,6 +153,7 @@ install_panel_native() {
         return
     fi
     local i
+    # shellcheck disable=SC2034 # loop counter only
     for i in $(seq 1 20); do
         if curl -fsS -o /dev/null --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/auth/login"; then
             ok "$(t msg_panel_url "$appurl")"
