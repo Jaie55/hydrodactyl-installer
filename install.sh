@@ -10,6 +10,23 @@ SCRIPT_REF="main"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
 
+# Minimal Ubuntu Server images ship without curl: install it when possible.
+if ! command -v curl >/dev/null 2>&1; then
+    printf 'curl not found; installing it...\n'
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -q &&
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -q curl ca-certificates
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y -q curl ca-certificates
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -Sy --noconfirm --needed curl ca-certificates
+    fi
+    if ! command -v curl >/dev/null 2>&1; then
+        printf 'curl is required and could not be installed automatically.\n' >&2
+        exit 1
+    fi
+fi
+
 # One-liner support: when the script is piped or run from a process
 # substitution, the sibling lib/ files are missing. Download the repository
 # tarball and continue from there.

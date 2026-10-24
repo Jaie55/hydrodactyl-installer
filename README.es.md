@@ -84,8 +84,14 @@ Para instalar, ejecuta este comando como root. El script pregunta si quieres el
 panel, un daemon o ambos.
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/Jaie55/hydrodactyl-installer/main/install.sh)
+# Ubuntu Server minimal no trae curl: instálalo primero
+apt update && apt install -y curl
+
+bash <(curl -fsSL https://raw.githubusercontent.com/Jaie55/hydrodactyl-installer/main/install.sh)
 ```
+
+Si `curl` ya está instalado, solo hace falta la última línea. Una vez en
+ejecución, el script instala por su cuenta cualquier dependencia que falte.
 
 _Nota: inicia sesión como root antes de ejecutar el comando de una línea; usar
 `sudo bash <(...)` no siempre funciona._
