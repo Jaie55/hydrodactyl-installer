@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
+# shellcheck disable=SC2034 # SUMMARY_* globals are consumed by install.sh
 
 # Daemon install mode: Pterodactyl Wings or pyrohost/elytra.
 
@@ -181,6 +182,9 @@ auto_configure_node() {
         }
 
     ok "$(t msg_node_configured "$NODE_NAME")"
+    SUMMARY_NODE="$NODE_NAME"
+    SUMMARY_NODE_FQDN="$NODE_FQDN"
+    SUMMARY_AUTO_NODE=1
     return 0
 }
 
@@ -213,6 +217,8 @@ install_daemon() {
     url="$(daemon_binary_url "$type")"
     download "$url" "/usr/local/bin/$bin"
     chmod +x "/usr/local/bin/$bin"
+    SUMMARY_DAEMON="$name"
+    SUMMARY_DAEMON_VERSION="$("/usr/local/bin/$bin" version 2>/dev/null | head -n1 || true)"
 
     if [[ -n "$DAEMON_CONFIG" ]]; then
         [[ -f "$DAEMON_CONFIG" ]] || die "$(t err_daemon_config_missing "$DAEMON_CONFIG")"

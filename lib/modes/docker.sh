@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
+# shellcheck disable=SC2034 # SUMMARY_* globals are consumed by install.sh
 
 # Docker install mode: uses the official docker-compose file.
 
@@ -30,6 +31,9 @@ install_panel_docker() {
     local scheme="http" appurl
     [[ "$use_ssl" -eq 1 ]] && scheme="https"
     appurl="$(panel_app_url "$scheme" "$DOMAIN" "$HTTP_PORT")"
+    SUMMARY_PANEL_KIND="docker"
+    SUMMARY_PANEL_URL="$appurl"
+    SUMMARY_SSL="$use_ssl"
 
     if ! has_cmd docker || ! docker compose version >/dev/null 2>&1; then
         warn "$(t msg_docker_missing)"
@@ -97,6 +101,7 @@ install_panel_docker() {
             die "$(t err_compose_invalid "$PANEL_DIR/docker-compose.yml")"
         fi
     fi
+    SUMMARY_REF="${PANEL_REF:-existing compose}"
 
     step "$(t msg_docker_starting)"
     (cd "$PANEL_DIR" && docker compose up -d)

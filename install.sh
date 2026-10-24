@@ -4,7 +4,7 @@
 # shellcheck disable=SC1091,SC2034 # libs are sourced at runtime and use these globals
 set -Eeuo pipefail
 
-INSTALLER_VERSION="0.6.1"
+INSTALLER_VERSION="0.8.0"
 REPO_SLUG="Jaie55/hydrodactyl-installer"
 SCRIPT_REF="main"
 
@@ -59,9 +59,15 @@ source "$SCRIPT_DIR/lib/modes/docker.sh"
 source "$SCRIPT_DIR/lib/modes/native.sh"
 # shellcheck source=lib/daemons.sh
 source "$SCRIPT_DIR/lib/daemons.sh"
+# shellcheck source=lib/maintenance.sh
+source "$SCRIPT_DIR/lib/maintenance.sh"
 
 MODE=""
 LANG_CHOICE=""
+ACTION="install"
+PURGE="0"
+UPDATE_TARGET=""
+UNINSTALL_TARGET=""
 INSTALL_TYPE=""
 INSTALL_PANEL="ask"
 INSTALL_DAEMON="0"
@@ -99,6 +105,16 @@ SFTP_PORT="2022"
 NODE_SCHEME="http"
 BEHIND_PROXY="0"
 DAEMON_VERSION=""
+SUMMARY_PANEL_URL=""
+SUMMARY_PANEL_KIND=""
+SUMMARY_REF=""
+SUMMARY_DB=""
+SUMMARY_SSL="0"
+SUMMARY_DAEMON=""
+SUMMARY_DAEMON_VERSION=""
+SUMMARY_NODE=""
+SUMMARY_NODE_FQDN=""
+SUMMARY_AUTO_NODE="0"
 
 usage() {
     cat <<EOF
@@ -148,6 +164,15 @@ Daemon
                             (default: 25565-25665,27015-27150)
   --no-node                 Do not create the node automatically
   --panel                   Install the panel too (used with --daemon)
+
+Maintenance
+  --check-updates           Show installed and latest versions
+  --update                  Update the detected panel and daemons
+  --update=panel|daemon     Update only the panel or the daemons
+  --uninstall               Uninstall the detected panel and daemons
+  --uninstall=panel|daemon|all|wings|elytra
+                            Uninstall a specific target
+  --purge                   With --uninstall, also delete the database and data
 
 Other
   --local                   Local test install: test mode, localhost domain
@@ -201,6 +226,12 @@ parse_args() {
             --behind-proxy) BEHIND_PROXY=1 ;;
             --ssl) SSL=1 ;;
             --local) LOCAL_INSTALL=1; DEPLOY_ENV='test' ;;
+            --check-updates) ACTION=check ;;
+            --update) ACTION=update ;;
+            --update=*) ACTION=update; UPDATE_TARGET="${1#*=}" ;;
+            --uninstall) ACTION=uninstall ;;
+            --uninstall=*) ACTION=uninstall; UNINSTALL_TARGET="${1#*=}" ;;
+            --purge) PURGE=1 ;;
             --no-verify) VERIFY=0 ;;
             --lang=*) LANG_CHOICE="${1#*=}" ;;
             -y | --yes) ASSUME_YES=1 ;;
@@ -229,6 +260,14 @@ parse_args() {
     case "$INSTALL_TYPE" in
         '' | basic | custom) ;;
         *) die "Invalid install type: $INSTALL_TYPE (use basic or custom)" ;;
+    esac
+    case "$UPDATE_TARGET" in
+        '' | panel | daemon) ;;
+        *) die "Invalid update target: $UPDATE_TARGET (use panel or daemon)" ;;
+    esac
+    case "$UNINSTALL_TARGET" in
+        '' | panel | daemon | all | wings | elytra) ;;
+        *) die "Invalid uninstall target: $UNINSTALL_TARGET" ;;
     esac
     case "$PHP_VERSION" in
         8.3 | 8.4 | 8.5) ;;
@@ -284,6 +323,9 @@ choose_language() {
 }
 
 interactive_menu() {
+    if [[ "$ACTION" != "install" ]]; then
+        return
+    fi
     if [[ "$ASSUME_YES" -eq 1 || ! -t 0 ]]; then
         return
     fi
@@ -301,7 +343,10 @@ interactive_menu() {
     printf '  6) %s\n' "$(t menu_panel_native_elytra)"
     printf '  7) %s\n' "$(t menu_daemon_wings)"
     printf '  8) %s\n' "$(t menu_daemon_elytra)"
-    printf '  9) %s\n\n' "$(t menu_quit)"
+    printf '  9) %s\n' "$(t menu_check_updates)"
+    printf ' 10) %s\n' "$(t menu_update)"
+    printf ' 11) %s\n' "$(t menu_uninstall)"
+    printf ' 12) %s\n\n' "$(t menu_quit)"
 
     local choice=''
     read -r -p "$(t menu_choice) [1]: " choice || true
@@ -314,7 +359,10 @@ interactive_menu() {
         6) INSTALL_PANEL=1; MODE=native; INSTALL_DAEMON=1; DAEMON_TYPE=elytra ;;
         7) INSTALL_PANEL=0; INSTALL_DAEMON=1; DAEMON_TYPE=wings ;;
         8) INSTALL_PANEL=0; INSTALL_DAEMON=1; DAEMON_TYPE=elytra ;;
-        9) exit 0 ;;
+        9) ACTION=check ;;
+        10) ACTION=update ;;
+        11) ACTION=uninstall ;;
+        12) exit 0 ;;
         *) die "$(t msg_invalid_choice)" ;;
     esac
 }
@@ -334,6 +382,83 @@ choose_environment() {
         2) DEPLOY_ENV='test' ;;
         *) die "$(t msg_invalid_choice)" ;;
     esac
+}
+
+detect_existing() {
+    local found_panel=0 found_daemon=0
+    local url ref bin ver status containers
+
+    if [[ -f "$PANEL_DIR/artisan" ]]; then
+        found_panel=1
+        url=''
+        if [[ -f "$PANEL_DIR/.env" ]]; then
+            url="$(grep -E '^APP_URL=' "$PANEL_DIR/.env" | head -n1 | cut -d= -f2- || true)"
+        fi
+        ref=''
+        if [[ -d "$PANEL_DIR/.git" ]]; then
+            ref="$(git -C "$PANEL_DIR" describe --tags --always 2>/dev/null || true)"
+        fi
+        info "$(t msg_existing_panel_native "$PANEL_DIR" "${ref:-?}" "${url:-?}")"
+    fi
+
+    if has_cmd docker && docker info >/dev/null 2>&1; then
+        containers="$(docker ps --format '{{.Names}} ({{.Image}})' 2>/dev/null |
+            grep -Ei 'hydrodactyl|pterodactyl' || true)"
+        if [[ -n "$containers" ]]; then
+            found_panel=1
+            info "$(t msg_existing_panel_docker "$(printf '%s' "$containers" | tr '\n' ' ')")"
+        fi
+    fi
+    if [[ "$found_panel" -eq 0 ]]; then
+        info "$(t msg_no_panel_detected)"
+    fi
+
+    for bin in wings elytra; do
+        if [[ -x "/usr/local/bin/$bin" ]]; then
+            found_daemon=1
+            ver="$("/usr/local/bin/$bin" version 2>/dev/null | head -n1 || true)"
+            status="$(systemctl is-active "$bin" 2>/dev/null || true)"
+            info "$(t msg_existing_daemon "$bin" "${ver:-?}" "${status:-unknown}")"
+        fi
+    done
+    if [[ "$found_daemon" -eq 0 ]]; then
+        info "$(t msg_no_daemon_detected)"
+    fi
+    if [[ "$found_panel" -eq 1 || "$found_daemon" -eq 1 ]]; then
+        warn "$(t msg_existing_hint)"
+    fi
+}
+
+print_summary() {
+    printf '\n%s== %s ==%s\n' "$C_BOLD$C_GREEN" "$(t summary_title)" "$C_RESET"
+
+    if [[ -n "$SUMMARY_PANEL_URL" ]]; then
+        ok "$(t summary_panel_url "$SUMMARY_PANEL_URL")"
+        info "$(t summary_panel "$(t "summary_kind_$SUMMARY_PANEL_KIND")" "${SUMMARY_REF:-?}")"
+        info "$(t summary_env "$(t "env_$DEPLOY_ENV")" "$TIMEZONE" "$APP_LOCALE")"
+        if [[ -n "$SUMMARY_DB" ]]; then
+            info "$(t summary_db "$SUMMARY_DB")"
+        fi
+        if [[ "$SUMMARY_SSL" -eq 1 ]]; then
+            info "$(t summary_ssl_yes)"
+        else
+            info "$(t summary_ssl_no)"
+        fi
+        if [[ "$FIREWALL" -eq 1 ]]; then
+            info "$(t summary_fw_yes)"
+        else
+            info "$(t summary_fw_no)"
+        fi
+    fi
+
+    if [[ -n "$SUMMARY_DAEMON" ]]; then
+        info "$(t summary_daemon "$SUMMARY_DAEMON" "${SUMMARY_DAEMON_VERSION:-?}")"
+        if [[ "$SUMMARY_AUTO_NODE" -eq 1 ]]; then
+            info "$(t summary_node "$SUMMARY_NODE" "$SUMMARY_NODE_FQDN" "$DAEMON_PORT" "$SFTP_PORT")"
+        else
+            info "$(t summary_node_manual)"
+        fi
+    fi
 }
 
 choose_install_type() {
@@ -450,7 +575,24 @@ main() {
     choose_language
     init_i18n "$LANG_CHOICE"
 
+    detect_existing
+
     interactive_menu
+
+    case "$ACTION" in
+        check)
+            check_updates
+            exit 0
+            ;;
+        update)
+            update_all
+            exit 0
+            ;;
+        uninstall)
+            uninstall_all
+            exit 0
+            ;;
+    esac
 
     if [[ "$INSTALL_PANEL" == "ask" && "$INSTALL_DAEMON" == "0" ]]; then
         usage
@@ -500,6 +642,7 @@ main() {
         install_daemon "${DAEMON_TYPE:-wings}"
     fi
 
+    print_summary
     printf '\n%s%s%s\n' "$C_GREEN$C_BOLD" "$(t msg_done)" "$C_RESET"
     info "$(t msg_log "$LOG_FILE")"
 }

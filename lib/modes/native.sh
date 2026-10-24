@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# shellcheck disable=SC2153 # DB_* and the other globals are set in install.sh
+# shellcheck disable=SC2153,SC2034 # globals set in install.sh, read in the summary
 
 # Native install mode (Ubuntu/Debian).
 
@@ -97,6 +97,11 @@ install_panel_native() {
     [[ "$use_ssl" -eq 1 ]] && scheme="https"
     local appurl
     appurl="$(panel_app_url "$scheme" "$DOMAIN" "$HTTP_PORT")"
+    SUMMARY_PANEL_KIND="native"
+    SUMMARY_PANEL_URL="$appurl"
+    SUMMARY_REF="${PANEL_REF:-?}"
+    SUMMARY_DB="$DB_NAME (${DB_USER})"
+    SUMMARY_SSL="$use_ssl"
 
     step "$(t msg_db_creating)"
     systemctl enable --now "${DB_KIND}"

@@ -27,7 +27,7 @@
     <img src="https://shieldcn.dev/badge/Shellcheck-Passing-success.svg?logo=githubactions" alt="Shellcheck">
   </a>
   <a href="https://github.com/Jaie55/hydrodactyl-installer/releases">
-    <img src="https://shieldcn.dev/badge/Release-v0.6.1-181717.svg?logo=github" alt="Latest release: v0.6.1">
+    <img src="https://shieldcn.dev/badge/Release-v0.8.0-181717.svg?logo=github" alt="Latest release: v0.8.0">
   </a>
   <img src="https://shieldcn.dev/badge/Made%20with-Bash-1f425f.svg?logo=gnubash" alt="Made with Bash">
   <img src="https://shieldcn.dev/badge/Platform-Linux-f0b429.svg?logo=linux" alt="Platform Linux">
@@ -36,27 +36,41 @@
 
 <br/>
 
-Unofficial scripts for installing the [Hydrodactyl](https://github.com/BlueprintFramework/hydrodactyl)
-Panel and its game server daemons (Pterodactyl Wings or pyrohost Elytra). Works
-with the latest Hydrodactyl stable release and the `main` branch.
+Unofficial **installer, updater and uninstaller** for the
+[Hydrodactyl](https://github.com/BlueprintFramework/hydrodactyl) panel and its
+game server daemons (Pterodactyl Wings or pyrohost Elytra). Install the panel
+with Docker or natively, create the node automatically, update the panel and
+daemons to the latest release, or remove everything with one command.
 
 This script is not associated with the official Hydrodactyl, Blueprint or
 Pterodactyl projects.
 
 > [!NOTE]
-> v0.6.1 is an early release. The installer has been statically validated
+> v0.8.0 is an early release. The installer has been statically validated
 > (`bash -n`, Shellcheck, EN/ES key parity); test it on a throwaway VM before
 > using it on a production machine.
 
 ## Features
 
-- Automatic installation of the Hydrodactyl Panel (dependencies, database,
-  nginx, queue worker, cronjob) either with **Docker** or **natively**.
-- Any panel source: latest stable tag, canary (`main`) or your own fork and
-  branch.
-- Automatic installation of the **Wings** or **Elytra** daemon (Docker,
-  systemd, binary download).
-- Panel: (optional) automatic configuration of Let's Encrypt.
+- **Installer** — every combination: panel only (Docker or native), panel +
+  Wings/Elytra (Docker or native) or a daemon alone (Wings/Elytra).
+- **Updater** — detects the installed panel and daemon versions and updates
+  them to the latest stable release (`--check-updates`, `--update`).
+- **Uninstaller** — removes the panel and/or daemons, their services and
+  configuration (`--uninstall`, `--purge` to delete databases and data).
+- **Automatic node setup** — with a panel application API key it creates the
+  location, node and port allocations through the API, fetches the node
+  configuration and starts the daemon.
+- **Detection and summary** — reports what is already installed (and its
+  version) before starting and prints a summary with the panel URL and every
+  chosen option when it finishes.
+- Any panel source: latest stable tag, canary (`main`) or a custom fork/ref.
+- **Basic or custom installs** — defaults, or every option prompted with
+  examples (timezone `Europe/Madrid`, locale `es-ES`, ports, PHP, firewall,
+  node resources...).
+- **Production or test** mode, including fully local installs (`--local`,
+  `localhost`, no DNS or internet needed).
+- Optional Let's Encrypt certificate and ufw firewall.
 - English and Spanish interface, auto-detected from the system locale.
 
 ## Help and support
@@ -91,9 +105,8 @@ Operating systems supported by this installation script.
 
 ## Using the installation scripts
 
-To install, run this command as root. The menu offers every combination: panel
-only (Docker or native), panel + Wings/Elytra (Docker or native), or a daemon
-alone (Wings/Elytra). It then asks whether the panel is production or test.
+To install, run this command as root. The menu offers every combination and
+also the update and uninstall actions.
 
 ```bash
 # Ubuntu Server minimal does not ship curl: install it first
@@ -105,21 +118,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Jaie55/hydrodactyl-installer
 If `curl` is already installed, only the last line is needed. Once the script
 is running it installs any missing dependency by itself. Interactive runs then
 ask for a **basic** install (defaults) or a **custom** one, where every option
-is prompted with an example (timezone `Europe/Madrid`, locale `es-ES`, PHP
-version, ports, firewall, node resources...).
+is prompted with an example.
 
-_Note: log in as root before executing the one-liner; running `sudo bash <(...)`
-does not always work._
-
-You can also clone the repository and run it locally:
-
-```bash
-git clone https://github.com/Jaie55/hydrodactyl-installer.git
-cd hydrodactyl-installer
-sudo bash install.sh
-```
-
-Fully scripted installs:
+Fully scripted examples:
 
 ```bash
 # Panel with Docker (recommended)
@@ -131,8 +132,11 @@ sudo bash install.sh --native --source=canary --domain panel.example.com --ssl -
 # Panel from your own fork and branch
 sudo bash install.sh --native --repo=https://github.com/you/hydrodactyl --ref=my-branch --domain panel.example.com
 
-# Daemon only, using the config downloaded from the panel
-sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
+# Local panel for testing (no DNS, no internet, admin at http://localhost)
+sudo bash install.sh --native --local -y
+
+# Daemon only, creating the node through the panel API
+sudo bash install.sh --daemon=wings --panel-url=http://127.0.0.1 --api-key=ptla_xxx -y
 ```
 
 ### Options
@@ -147,7 +151,7 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | `--source=stable\|canary\|custom` | `stable` = latest release tag, `canary` = `main`, `custom` = `--repo`/`--ref` |
 | `--repo=URL`                     | Custom panel repository (implies `--source=custom`)                         |
 | `--ref=BRANCH`                   | Branch or tag for the custom repository                                     |
-| `--domain=DOMAIN`                | Panel domain (used by nginx and HTTPS)                                      |
+| `--domain=DOMAIN`                | Panel domain (optional in test mode, defaults to `localhost`)               |
 | `--dir=PATH`                     | Panel directory (default `/var/www/hydrodactyl`)                            |
 | `--db=mariadb\|mysql`            | Database engine for the native install                                      |
 | `--db-name=NAME`                 | Database name (default `panel`)                                             |
@@ -159,12 +163,12 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | `--http-port=PORT`               | HTTP port (default `80`)                                                    |
 | `--firewall` / `--no-firewall`   | Configure ufw (SSH, HTTP, HTTPS and daemon ports)                           |
 | `--daemon=wings\|elytra`         | Install a daemon                                                            |
+| `--daemon-config=PATH`           | Node config file downloaded from the panel                                  |
 | `--daemon-version=TAG`           | Daemon release tag (default: latest)                                        |
 | `--daemon-port=PORT`             | Daemon listen port (default `8080`)                                         |
 | `--sftp-port=PORT`               | SFTP port (default `2022`)                                                  |
 | `--node-scheme=http\|https`      | Panel to daemon scheme (default `http`)                                     |
 | `--behind-proxy`                 | The node is behind a proxy                                                  |
-| `--daemon-config=PATH`           | Node config file downloaded from the panel                                  |
 | `--panel-url=URL`                | Panel URL for automatic node setup (default `http://127.0.0.1`)             |
 | `--api-key=KEY`                  | Panel application API key (asked if omitted)                                |
 | `--node-name=NAME`               | Node name (default: hostname)                                               |
@@ -172,51 +176,74 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | `--memory=MB` / `--disk=MB`      | Node resources (default: detected)                                          |
 | `--ports=LIST`                   | Allocations, comma separated (default `25565-25665,27015-27150`)            |
 | `--no-node`                      | Do not create the node automatically                                        |
-| `--panel`                        | Install the panel too (with `--daemon`)                                     |
+| `--check-updates`                | Show installed and latest panel/daemon versions                             |
+| `--update[=panel\|daemon]`       | Update the detected panel and/or daemons                                    |
+| `--uninstall[=panel\|daemon\|all\|wings\|elytra]` | Uninstall the given targets                               |
+| `--purge`                        | With `--uninstall`, also delete the database and data directories           |
 | `--ssl`                          | Request a free Let's Encrypt certificate                                    |
 | `--no-verify`                    | Skip the final check that the panel answers (CI/local tests)                |
 | `--lang=en\|es`                  | Interface language                                                          |
 | `-y`, `--yes`                    | Non-interactive, assume yes                                                 |
 | `-h`, `--help`                   | Show help                                                                   |
 
-## What each mode does
+## Automatic node setup
 
-**Docker** — installs Docker when missing, downloads the official
-`docker-compose.example.yml`, fills in the database passwords, domain and mail
-sender, stores it in `--dir` and runs `docker compose up -d`. Data lives under
-`/srv/pterodactyl`. The published stable image is used; the chosen source only
-affects where the compose file is taken from. Containers restart on boot
-(`unless-stopped`). ufw is skipped in Docker mode because Docker publishes its
-own ports and would bypass it.
+The daemon can be configured without copying anything by hand. Create an
+**application API key** in the panel (Admin → Application API → Create) and the
+installer will:
 
-**Native** — installs nginx, PHP 8.4, MariaDB/MySQL, Node.js 22 + pnpm and
-Composer; clones the panel at the selected source; creates the database and
-user; writes `.env`; runs `composer install`, `pnpm install`, `pnpm run build`,
-`key:generate` and `migrate --seed`; sets permissions for `www-data`; writes
-the nginx vhost, the scheduler cronjob and the `pyroq` queue worker service;
-and optionally requests a certificate with certbot.
-
-Re-running the native mode updates the checkout to the selected ref
-(`git reset --hard`, so local edits are lost), reuses the existing database
-password from `.env` and re-applies the configuration.
-
-**Daemons** — installs Docker (required by both daemons), downloads the latest
-`wings` or `elytra` binary for your architecture and installs the systemd unit.
-Then it configures the node automatically: with a panel application API key
-(Admin → Application API → Create) it creates the location, the node and the
-port allocations through the panel API, runs `wings configure` (or
-`elytra configure`) to fetch the node configuration and starts the service.
-If you pass `--daemon-config` the given file is used instead.
+1. create a location if the panel has none,
+2. create the node with the detected (or given) memory, disk and FQDN,
+3. create the port allocations,
+4. run `wings configure` / `elytra configure` to download the node
+   configuration, and
+5. start the systemd service.
 
 For a panel on the same machine use `--panel-url=http://127.0.0.1`. Without a
 key the unit is created but not started; paste the node configuration from the
 panel into `/etc/pterodactyl/config.yml` and run `systemctl restart wings` (or
 `elytra`) afterwards.
 
-## After installing
+## Updating the panel and daemons
 
-Open the panel URL, finish the setup wizard (first admin account) and, for
-daemons, create a node in the panel to download its configuration.
+The script also works as a **Hydrodactyl panel updater**:
+
+```bash
+# Show the installed and latest versions
+sudo bash install.sh --check-updates
+
+# Update the detected panel and daemons
+sudo bash install.sh --update
+
+# Update only the panel or only the daemons
+sudo bash install.sh --update=panel
+sudo bash install.sh --update=daemon
+```
+
+- Native panel: fetches the latest stable tag, rebuilds the frontend and
+  dependencies, runs migrations and reloads nginx/PHP-FPM/queue.
+- Docker panel: pulls the latest image and recreates the containers.
+- Daemons: downloads the latest Wings/Elytra binary and restarts the service.
+
+The interactive menu (option 9/10) offers the same actions.
+
+## Uninstalling
+
+```bash
+# Uninstall everything that is installed
+sudo bash install.sh --uninstall
+
+# Uninstall only the panel or only the daemons
+sudo bash install.sh --uninstall=panel
+sudo bash install.sh --uninstall=daemon
+sudo bash install.sh --uninstall=wings
+
+# Also delete the database and data directories
+sudo bash install.sh --uninstall --purge
+```
+
+Without `--purge` the panel database and the daemon data directories
+(`/srv/pterodactyl`, `/var/lib/pterodactyl`) are kept.
 
 ## Local test without DNS
 
@@ -235,6 +262,34 @@ from another machine, point the domain at the panel's IP there:
 ```bash
 echo '192.168.1.50 panel.test' | sudo tee -a /etc/hosts
 ```
+
+## What each mode does
+
+**Docker** — installs Docker when missing, downloads the official
+`docker-compose.example.yml`, fills in the database passwords, domain, timezone,
+locale and mail sender, stores it in `--dir` and runs `docker compose up -d`.
+Data lives under `/srv/pterodactyl`. The published stable image is used; the
+chosen source only affects where the compose file is taken from. Containers
+restart on boot (`unless-stopped`). ufw is skipped in Docker mode because
+Docker publishes its own ports and would bypass it.
+
+**Native** — installs nginx, PHP, MariaDB/MySQL, Node.js + pnpm and Composer;
+clones the panel at the selected source; creates the database and user; writes
+`.env`; runs `composer install`, `pnpm install`, `pnpm run build` and
+`migrate --seed`; sets permissions for `www-data`; writes the nginx vhost, the
+scheduler cronjob and the `pyroq` queue worker service; and optionally requests
+a certificate with certbot.
+
+Re-running the installer updates the checkout to the selected ref
+(`git reset --hard`, so local edits are lost), reuses the existing database
+password from `.env` and re-applies the configuration. A summary with the panel
+URL and the chosen configuration is printed at the end.
+
+## After installing
+
+Open the panel URL, finish the setup wizard (first admin account) and, for
+daemons, create a node in the panel or let the installer create it with an
+application API key.
 
 ## Development & testing
 
