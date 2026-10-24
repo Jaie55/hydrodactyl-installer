@@ -1,4 +1,15 @@
 <p align="center">
+  <a href="README.md">
+    <img src="https://shieldcn.dev/badge/Language-English-181717.svg?logo=github" alt="English">
+  </a>
+  <a href="README.es.md">
+    <img src="https://shieldcn.dev/badge/Language-Espa%C3%B1ol-success.svg?logo=github" alt="Español">
+  </a>
+</p>
+
+<br/>
+
+<p align="center">
   <a href="https://hydrodactyl.dev/docs/hydrodactyl">
     <img src="https://shieldcn.dev/badge/Docs-hydrodactyl.dev-0ea5e9.svg?logo=readme" alt="Documentación">
   </a>
@@ -16,7 +27,7 @@
     <img src="https://shieldcn.dev/badge/Shellcheck-Passing-success.svg?logo=githubactions" alt="Shellcheck">
   </a>
   <a href="https://github.com/Jaie55/hydrodactyl-installer/releases">
-    <img src="https://shieldcn.dev/badge/Release-v0.3.0-181717.svg?logo=github" alt="Última release: v0.3.0">
+    <img src="https://shieldcn.dev/badge/Release-v0.4.0-181717.svg?logo=github" alt="Última release: v0.4.0">
   </a>
   <img src="https://shieldcn.dev/badge/Hecho%20con-Bash-1f425f.svg?logo=gnubash" alt="Hecho con Bash">
   <img src="https://shieldcn.dev/badge/Plataforma-Linux-f0b429.svg?logo=linux" alt="Plataforma Linux">
@@ -33,7 +44,7 @@ Este script no está asociado con los proyectos oficiales de Hydrodactyl,
 Blueprint ni Pterodactyl.
 
 > [!NOTE]
-> La v0.1.0 es una versión temprana. El instalador se ha validado de forma
+> La v0.4.0 es una versión temprana. El instalador se ha validado de forma
 > estática (`bash -n`, Shellcheck, paridad de claves EN/ES); pruébalo en una VM
 > desechable antes de usarlo en una máquina de producción.
 
@@ -91,7 +102,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Jaie55/hydrodactyl-installer
 ```
 
 Si `curl` ya está instalado, solo hace falta la última línea. Una vez en
-ejecución, el script instala por su cuenta cualquier dependencia que falte.
+ejecución, el script instala por su cuenta cualquier dependencia que falte. Sin
+flags, un paso avanzado opcional pregunta por la zona horaria, el locale, el
+puerto HTTP, la versión de PHP y el firewall.
 
 _Nota: inicia sesión como root antes de ejecutar el comando de una línea; usar
 `sudo bash <(...)` no siempre funciona._
@@ -133,7 +146,20 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | `--domain=DOMAIN`                  | Dominio del panel (lo usan nginx y HTTPS)                                       |
 | `--dir=PATH`                       | Directorio del panel (por defecto `/var/www/hydrodactyl`)                        |
 | `--db=mariadb\|mysql`              | Motor de base de datos para la instalación nativa                                |
-| `--daemon=wings\|elytra`           | Instala un daemon                                                                |
+| `--db-name=NAME`                   | Nombre de la base de datos (por defecto `panel`)                                 |
+| `--db-user=USER`                   | Usuario de la base de datos (por defecto `hydrodactyl`)                          |
+| `--db-password=PASS`               | Contraseña de la base de datos (por defecto: generada)                           |
+| `--php=8.3\|8.4\|8.5`              | Versión de PHP para la instalación nativa (por defecto `8.4`)                    |
+| `--timezone=TZ`                    | Zona horaria de la aplicación (por defecto `UTC`)                               |
+| `--locale=LOCALE`                  | Locale de la aplicación (por defecto `en-US`)                                   |
+| `--http-port=PORT`                 | Puerto HTTP (por defecto `80`)                                                  |
+| `--firewall` / `--no-firewall`     | Configurar ufw (SSH, HTTP, HTTPS y puertos del daemon)                          |
+| `--daemon=wings\|elytra`           | Instala un daemon                                                               |
+| `--daemon-version=TAG`             | Tag de release del daemon (por defecto: última)                                 |
+| `--daemon-port=PORT`               | Puerto de escucha del daemon (por defecto `8080`)                               |
+| `--sftp-port=PORT`                 | Puerto SFTP (por defecto `2022`)                                                |
+| `--node-scheme=http\|https`        | Esquema panel -> daemon (por defecto `http`)                                    |
+| `--behind-proxy`                   | El nodo está detrás de un proxy                                                 |
 | `--daemon-config=PATH`             | Fichero de configuración del nodo descargado del panel                           |
 | `--panel-url=URL`                  | URL del panel para configurar el nodo (por defecto `http://127.0.0.1`)            |
 | `--api-key=KEY`                    | API key de aplicación del panel (se pregunta si se omite)                        |

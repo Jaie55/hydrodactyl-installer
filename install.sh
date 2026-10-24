@@ -4,7 +4,7 @@
 # shellcheck disable=SC1091,SC2034 # libs are sourced at runtime and use these globals
 set -Eeuo pipefail
 
-INSTALLER_VERSION="0.3.0"
+INSTALLER_VERSION="0.4.0"
 REPO_SLUG="Jaie55/hydrodactyl-installer"
 SCRIPT_REF="main"
 
@@ -80,6 +80,19 @@ NODE_FQDN=""
 NODE_MEMORY=""
 NODE_DISK=""
 NODE_PORTS=""
+TIMEZONE="UTC"
+APP_LOCALE="en-US"
+HTTP_PORT="80"
+PHP_VERSION="8.4"
+DB_NAME="panel"
+DB_USER="hydrodactyl"
+DB_PASS=""
+FIREWALL="0"
+DAEMON_PORT="8080"
+SFTP_PORT="2022"
+NODE_SCHEME="http"
+BEHIND_PROXY="0"
+DAEMON_VERSION=""
 
 usage() {
     cat <<EOF
@@ -99,10 +112,24 @@ Panel
   --domain=DOMAIN           Panel domain
   --dir=PATH                Panel directory (default: /var/www/hydrodactyl)
   --db=mariadb|mysql        Database engine for the native install
+  --db-name=NAME            Database name (default: panel)
+  --db-user=USER            Database user (default: hydrodactyl)
+  --db-password=PASS        Database password (default: generated)
+  --php=8.3|8.4|8.5         PHP version for the native install (default: 8.4)
+  --timezone=TZ             Application timezone (default: UTC)
+  --locale=LOCALE           Application locale (default: en-US)
+  --http-port=PORT          HTTP port (default: 80)
+  --firewall                Configure ufw (SSH, HTTP, HTTPS and daemon ports)
+  --no-firewall             Do not configure the firewall (default)
 
 Daemon
   --daemon=wings|elytra     Install a daemon (native)
   --daemon-config=PATH      Node config file downloaded from the panel
+  --daemon-version=TAG      Daemon release tag (default: latest)
+  --daemon-port=PORT        Daemon listen port (default: 8080)
+  --sftp-port=PORT          SFTP port (default: 2022)
+  --node-scheme=http|https  Panel -> daemon scheme (default: http)
+  --behind-proxy            The node is behind a proxy
   --panel-url=URL           Panel URL for automatic node setup
   --api-key=KEY             Panel application API key (asked if omitted)
   --node-name=NAME          Node name (default: hostname)
@@ -147,6 +174,20 @@ parse_args() {
             --domain=*) DOMAIN="${1#*=}" ;;
             --dir=*) PANEL_DIR="${1#*=}" ;;
             --db=*) DB_KIND="${1#*=}" ;;
+            --db-name=*) DB_NAME="${1#*=}" ;;
+            --db-user=*) DB_USER="${1#*=}" ;;
+            --db-password=*) DB_PASS="${1#*=}" ;;
+            --php=*) PHP_VERSION="${1#*=}" ;;
+            --timezone=*) TIMEZONE="${1#*=}" ;;
+            --locale=*) APP_LOCALE="${1#*=}" ;;
+            --http-port=*) HTTP_PORT="${1#*=}" ;;
+            --firewall) FIREWALL=1 ;;
+            --no-firewall) FIREWALL=0 ;;
+            --daemon-version=*) DAEMON_VERSION="${1#*=}" ;;
+            --daemon-port=*) DAEMON_PORT="${1#*=}" ;;
+            --sftp-port=*) SFTP_PORT="${1#*=}" ;;
+            --node-scheme=*) NODE_SCHEME="${1#*=}" ;;
+            --behind-proxy) BEHIND_PROXY=1 ;;
             --ssl) SSL=1 ;;
             --no-verify) VERIFY=0 ;;
             --lang=*) LANG_CHOICE="${1#*=}" ;;
@@ -173,6 +214,19 @@ parse_args() {
         '' | production | test) ;;
         *) die "Invalid environment: $DEPLOY_ENV (use production or test)" ;;
     esac
+    case "$PHP_VERSION" in
+        8.3 | 8.4 | 8.5) ;;
+        *) die "Invalid PHP version: $PHP_VERSION (use 8.3, 8.4 or 8.5)" ;;
+    esac
+    case "$NODE_SCHEME" in
+        http | https) ;;
+        *) die "Invalid node scheme: $NODE_SCHEME (use http or https)" ;;
+    esac
+    is_port "$HTTP_PORT" || die "Invalid HTTP port: $HTTP_PORT"
+    is_port "$DAEMON_PORT" || die "Invalid daemon port: $DAEMON_PORT"
+    is_port "$SFTP_PORT" || die "Invalid SFTP port: $SFTP_PORT"
+    [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]] || die "Invalid database name: $DB_NAME"
+    [[ "$DB_USER" =~ ^[A-Za-z0-9_]+$ ]] || die "Invalid database user: $DB_USER"
 }
 
 choose_language() {
@@ -238,6 +292,42 @@ choose_environment() {
     esac
 }
 
+choose_advanced() {
+    if [[ "$ASSUME_YES" -eq 1 || ! -t 0 ]]; then
+        return
+    fi
+    confirm "$(t confirm_advanced)" n || return
+
+    if [[ "$INSTALL_PANEL" == "1" ]]; then
+        ask TIMEZONE "$(t prompt_timezone)" "UTC"
+        ask APP_LOCALE "$(t prompt_locale)" "en-US"
+        ask HTTP_PORT "$(t prompt_http_port)" "80"
+        if [[ "$MODE" == "native" ]]; then
+            ask PHP_VERSION "$(t prompt_php_version)" "8.4"
+        fi
+        if confirm "$(t prompt_firewall)" n; then FIREWALL=1; fi
+    fi
+    if [[ "$INSTALL_DAEMON" == "1" ]]; then
+        ask DAEMON_PORT "$(t prompt_daemon_port)" "8080"
+        ask SFTP_PORT "$(t prompt_sftp_port)" "2022"
+        ask NODE_SCHEME "$(t prompt_node_scheme)" "http"
+        if confirm "$(t prompt_behind_proxy)" n; then BEHIND_PROXY=1; fi
+        if confirm "$(t prompt_firewall)" n; then FIREWALL=1; fi
+    fi
+
+    is_port "$HTTP_PORT" || die "Invalid HTTP port: $HTTP_PORT"
+    is_port "$DAEMON_PORT" || die "Invalid daemon port: $DAEMON_PORT"
+    is_port "$SFTP_PORT" || die "Invalid SFTP port: $SFTP_PORT"
+    case "$PHP_VERSION" in
+        8.3 | 8.4 | 8.5) ;;
+        *) die "Invalid PHP version: $PHP_VERSION (use 8.3, 8.4 or 8.5)" ;;
+    esac
+    case "$NODE_SCHEME" in
+        http | https) ;;
+        *) die "Invalid node scheme: $NODE_SCHEME (use http or https)" ;;
+    esac
+}
+
 choose_source() {
     if [[ "$SOURCE" == "custom" ]]; then
         if [[ -z "$CUSTOM_REPO" ]]; then ask CUSTOM_REPO "$(t prompt_repo_url)"; fi
@@ -298,12 +388,17 @@ main() {
         fi
         if [[ -z "$DOMAIN" ]]; then ask DOMAIN "$(t prompt_domain)"; fi
         if [[ -z "$PANEL_DIR" ]]; then ask PANEL_DIR "$(t prompt_panel_dir)" "/var/www/hydrodactyl"; fi
+        choose_advanced
         confirm "$(t confirm_install)" y || exit 0
 
         case "$MODE" in
             docker) install_panel_docker ;;
             native) install_panel_native ;;
         esac
+    fi
+
+    if [[ "$INSTALL_PANEL" != "1" && "$INSTALL_DAEMON" == "1" ]]; then
+        choose_advanced
     fi
 
     if [[ "$INSTALL_DAEMON" == "1" ]]; then

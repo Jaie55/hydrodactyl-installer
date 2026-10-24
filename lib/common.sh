@@ -188,6 +188,39 @@ is_local_domain() {
     return 1
 }
 
+is_port() {
+    [[ "$1" =~ ^[0-9]+$ ]] && ((10#$1 > 0 && 10#$1 <= 65535))
+}
+
+# panel_app_url SCHEME DOMAIN [PORT]
+panel_app_url() {
+    local scheme="$1" domain="$2" port="${3:-80}"
+    if [[ "$scheme" == "https" ]]; then
+        printf 'https://%s' "$domain"
+    elif [[ "$port" == "80" ]]; then
+        printf 'http://%s' "$domain"
+    else
+        printf 'http://%s:%s' "$domain" "$port"
+    fi
+}
+
+# configure_firewall PORT... -> allow SSH and the given ports with ufw.
+configure_firewall() {
+    [[ "${FIREWALL:-0}" -eq 1 ]] || return 0
+    has_cmd ufw || pkg_install ufw
+    ufw allow 22/tcp >/dev/null 2>&1 || true
+    local port
+    for port in "$@"; do
+        [[ -n "$port" ]] || continue
+        ufw allow "${port}/tcp" >/dev/null 2>&1 || true
+    done
+    if ufw --force enable >/dev/null 2>&1; then
+        info "$(t msg_firewall_enabled)"
+    else
+        warn "$(t msg_firewall_failed)"
+    fi
+}
+
 # set_env KEY VALUE [FILE] -> idempotent KEY=VALUE upsert in a dotenv file.
 set_env() {
     local key="$1" value="$2" file="${3:-.env}"

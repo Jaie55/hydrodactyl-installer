@@ -8,11 +8,27 @@ daemon_binary_url() {
         amd64 | arm64) ;;
         *) die "$(t err_daemon_arch "$1" "$ARCH")" ;;
     esac
+    local base
     case "$1" in
-        wings) printf '%s' "https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_${ARCH}" ;;
-        elytra) printf '%s' "https://github.com/pyrohost/elytra/releases/latest/download/elytra_linux_${ARCH}" ;;
+        wings) base="https://github.com/pterodactyl/wings" ;;
+        elytra) base="https://github.com/pyrohost/elytra" ;;
         *) return 1 ;;
     esac
+    if [[ -n "$DAEMON_VERSION" ]]; then
+        printf '%s/releases/download/%s/%s_linux_%s' "$base" "$DAEMON_VERSION" "$1" "$ARCH"
+    else
+        printf '%s/releases/latest/download/%s_linux_%s' "$base" "$1" "$ARCH"
+    fi
+}
+
+daemon_firewall_ports() {
+    local port
+    local -a ports=("$DAEMON_PORT" "$SFTP_PORT")
+    local IFS=','
+    for port in $NODE_PORTS; do
+        ports+=("${port/-/:}")
+    done
+    printf '%s\n' "${ports[@]}"
 }
 
 detect_memory_mb() {
@@ -112,18 +128,26 @@ auto_configure_node() {
     fi
     info "$(t msg_node_location "$location_id")"
 
+    if [[ "$NODE_SCHEME" == "https" ]]; then
+        warn "$(t warn_node_https)"
+    fi
+
     payload="$(jq -n \
         --arg name "$NODE_NAME" \
         --arg fqdn "$NODE_FQDN" \
         --arg type "$type" \
+        --arg scheme "$NODE_SCHEME" \
+        --argjson behind "$BEHIND_PROXY" \
         --argjson location "$location_id" \
         --argjson memory "$NODE_MEMORY" \
         --argjson disk "$NODE_DISK" \
+        --argjson daemon_port "$DAEMON_PORT" \
+        --argjson sftp_port "$SFTP_PORT" \
         '{name: $name, description: "Created by hydrodactyl-installer",
-          location_id: $location, fqdn: $fqdn, scheme: "http",
-          behind_proxy: false, public: true, memory: $memory,
+          location_id: $location, fqdn: $fqdn, scheme: $scheme,
+          behind_proxy: ($behind == 1), public: true, memory: $memory,
           memory_overallocate: 0, disk: $disk, disk_overallocate: 0,
-          upload_size: 100, daemon_listen: 8080, daemon_sftp: 2022,
+          upload_size: 100, daemon_listen: $daemon_port, daemon_sftp: $sftp_port,
           maintenance_mode: false, daemon_type: $type}')" || return 1
 
     if ! response="$(panel_api POST /api/application/nodes "$payload")"; then
@@ -158,6 +182,7 @@ auto_configure_node() {
 
 install_daemon() {
     local type="$1" name bin url
+    local -a fw_ports
     case "$type" in
         wings) name="Wings"; bin="wings" ;;
         elytra) name="Elytra"; bin="elytra" ;;
@@ -210,6 +235,8 @@ EOF
 
     if [[ -f /etc/pterodactyl/config.yml ]]; then
         systemctl enable --now "$bin"
+        mapfile -t fw_ports < <(daemon_firewall_ports)
+        configure_firewall "${fw_ports[@]}"
         ok "$(t msg_daemon_started "$bin")"
         return
     fi
@@ -217,6 +244,8 @@ EOF
     if [[ "$AUTO_NODE" -eq 1 ]] && confirm "$(t confirm_auto_node)" y; then
         if auto_configure_node "$type" "$bin"; then
             systemctl enable --now "$bin"
+            mapfile -t fw_ports < <(daemon_firewall_ports)
+            configure_firewall "${fw_ports[@]}"
             ok "$(t msg_daemon_started "$bin")"
             return
         fi

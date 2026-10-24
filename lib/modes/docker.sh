@@ -24,6 +24,10 @@ install_panel_docker() {
         [[ "$use_ssl" -eq 1 ]] || warn "$(t warn_prod_nossl)"
     fi
 
+    local scheme="http" appurl
+    [[ "$use_ssl" -eq 1 ]] && scheme="https"
+    appurl="$(panel_app_url "$scheme" "$DOMAIN" "$HTTP_PORT")"
+
     if ! has_cmd docker || ! docker compose version >/dev/null 2>&1; then
         warn "$(t msg_docker_missing)"
         confirm "$(t confirm_install_docker)" y || die "$(t msg_docker_missing)"
@@ -48,14 +52,11 @@ install_panel_docker() {
         fetch_repo_file docker-compose.example.yml "$tmpdir/docker-compose.yml"
 
         step "$(t msg_docker_filling)"
-        local dbpass rootpass appurl le_email=''
+        local dbpass rootpass le_email=''
         dbpass="$(random_password)"
         rootpass="$(random_password)"
         if [[ "$use_ssl" -eq 1 ]]; then
-            appurl="https://$DOMAIN"
             ask le_email "$(t prompt_le_email)"
-        else
-            appurl="http://$DOMAIN"
         fi
 
         sed -i \
@@ -63,7 +64,12 @@ install_panel_docker() {
             -e "s|'CHANGE_ME'|'$(escape_sed "$dbpass")'|" \
             -e "s|'http://example.com'|'$(escape_sed "$appurl")'|" \
             -e "s|'noreply@example.com'|'noreply@$DOMAIN'|g" \
+            -e "s|'80:80'|'$HTTP_PORT:80'|" \
+            -e "s|APP_TIMEZONE: 'UTC'|APP_TIMEZONE: '$(escape_sed "$TIMEZONE")'|" \
             "$tmpdir/docker-compose.yml"
+
+        sed -i "/APP_TIMEZONE:/a\\
+            APP_LOCALE: '$(escape_sed "$APP_LOCALE")'" "$tmpdir/docker-compose.yml"
 
         if [[ -n "$le_email" ]]; then
             sed -i -e "s|# LE_EMAIL: \"\"|LE_EMAIL: \"$(escape_sed "$le_email")\"|" "$tmpdir/docker-compose.yml"
@@ -81,17 +87,18 @@ install_panel_docker() {
     step "$(t msg_docker_starting)"
     (cd "$PANEL_DIR" && docker compose up -d)
 
+    configure_firewall "$HTTP_PORT" 443
+
     step "$(t msg_verify)"
     if [[ "$VERIFY" -eq 0 ]]; then
         info "$(t msg_verify_skipped)"
         return
     fi
-    local i appurl
-    appurl="http://$DOMAIN"
-    [[ "$use_ssl" -eq 1 ]] && appurl="https://$DOMAIN"
+    local i
     # shellcheck disable=SC2034 # loop counter only
     for i in $(seq 1 30); do
-        if curl -fsS -o /dev/null --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/auth/login"; then
+        if curl -fsS -o /dev/null --resolve "$DOMAIN:${HTTP_PORT}:127.0.0.1" \
+            "http://${DOMAIN}:${HTTP_PORT}/auth/login"; then
             ok "$(t msg_panel_url "$appurl")"
             return
         fi

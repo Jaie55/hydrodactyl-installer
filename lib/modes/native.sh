@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
+# shellcheck disable=SC2153 # DB_* and the other globals are set in install.sh
 
 # Native install mode (Ubuntu/Debian).
 
 WEB_USER="www-data"
-PHP_BIN="/usr/bin/php8.4"
 
 install_panel_native() {
     if [[ "$FAMILY" != "debian" ]]; then
         die "$(t msg_native_only_debian "$DISTRO_NAME")"
     fi
 
+    local PHP_BIN="/usr/bin/php${PHP_VERSION}"
     step "$(t menu_panel_native)"
 
     step "$(t msg_apt_deps)"
@@ -32,8 +33,11 @@ install_panel_native() {
     fi
 
     step "$(t msg_php)"
-    pkg_install php8.4-cli php8.4-fpm php8.4-common php8.4-gd php8.4-mysql php8.4-mbstring \
-        php8.4-bcmath php8.4-xml php8.4-curl php8.4-zip php8.4-intl php8.4-sqlite3 php8.4-redis
+    pkg_install "php${PHP_VERSION}-cli" "php${PHP_VERSION}-fpm" "php${PHP_VERSION}-common" \
+        "php${PHP_VERSION}-gd" "php${PHP_VERSION}-mysql" "php${PHP_VERSION}-mbstring" \
+        "php${PHP_VERSION}-bcmath" "php${PHP_VERSION}-xml" "php${PHP_VERSION}-curl" \
+        "php${PHP_VERSION}-zip" "php${PHP_VERSION}-intl" "php${PHP_VERSION}-sqlite3" \
+        "php${PHP_VERSION}-redis"
 
     step "$(t msg_node)"
     if ! has_cmd node || ! has_cmd pnpm; then
@@ -69,36 +73,38 @@ install_panel_native() {
         [[ "$use_ssl" -eq 1 ]] || warn "$(t warn_prod_nossl)"
     fi
 
+    local scheme="http"
+    [[ "$use_ssl" -eq 1 ]] && scheme="https"
+    local appurl
+    appurl="$(panel_app_url "$scheme" "$DOMAIN" "$HTTP_PORT")"
+
     step "$(t msg_db_creating)"
     systemctl enable --now "${DB_KIND}"
-    local dbpass
+    local dbpass="$DB_PASS"
     if [[ -f "$PANEL_DIR/.env" ]] && grep -qE '^DB_PASSWORD=.+' "$PANEL_DIR/.env"; then
         dbpass="$(grep -E '^DB_PASSWORD=' "$PANEL_DIR/.env" | head -n1 | cut -d= -f2-)"
-    else
-        dbpass="$(random_password)"
     fi
-    mysql -e "CREATE DATABASE IF NOT EXISTS panel;
-        CREATE USER IF NOT EXISTS 'hydrodactyl'@'127.0.0.1' IDENTIFIED BY '${dbpass}';
-        ALTER USER 'hydrodactyl'@'127.0.0.1' IDENTIFIED BY '${dbpass}';
-        GRANT ALL PRIVILEGES ON panel.* TO 'hydrodactyl'@'127.0.0.1';
+    [[ -n "$dbpass" ]] || dbpass="$(random_password)"
+    mysql -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`;
+        CREATE USER IF NOT EXISTS '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${dbpass}';
+        ALTER USER '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${dbpass}';
+        GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'127.0.0.1';
         FLUSH PRIVILEGES;"
 
     step "$(t msg_env)"
-    local appurl
-    if [[ "$use_ssl" -eq 1 ]]; then appurl="https://$DOMAIN"; else appurl="http://$DOMAIN"; fi
-
     cd "$PANEL_DIR" || die "Cannot enter $PANEL_DIR"
     [[ -f .env ]] || cp .env.example .env
 
     set_env APP_ENV production
     set_env APP_URL "$appurl"
-    set_env APP_TIMEZONE UTC
+    set_env APP_TIMEZONE "$TIMEZONE"
+    set_env APP_LOCALE "$APP_LOCALE"
     set_env APP_SERVICE_AUTHOR "noreply@$DOMAIN"
     set_env DB_CONNECTION mysql
     set_env DB_HOST 127.0.0.1
     set_env DB_PORT 3306
-    set_env DB_DATABASE panel
-    set_env DB_USERNAME hydrodactyl
+    set_env DB_DATABASE "$DB_NAME"
+    set_env DB_USERNAME "$DB_USER"
     set_env DB_PASSWORD "$dbpass"
     set_env CACHE_STORE database
     set_env REDIS_HOST 127.0.0.1
@@ -132,13 +138,16 @@ install_panel_native() {
 
     step "$(t msg_nginx)"
     local vhost=/etc/nginx/sites-available/hydrodactyl.conf
-    sed -e "s|__DOMAIN__|$DOMAIN|g" -e "s|__PANEL_DIR__|$PANEL_DIR|g" \
+    sed -e "s|__DOMAIN__|$DOMAIN|g" \
+        -e "s|__PANEL_DIR__|$PANEL_DIR|g" \
+        -e "s|__HTTP_PORT__|$HTTP_PORT|g" \
+        -e "s|__PHP_VERSION__|$PHP_VERSION|g" \
         "$SCRIPT_DIR/config/nginx.conf.tpl" >"$vhost"
     ln -sf "$vhost" /etc/nginx/sites-enabled/hydrodactyl.conf
     rm -f /etc/nginx/sites-enabled/default
     nginx -t || die "nginx configuration test failed"
     systemctl reload nginx
-    systemctl enable --now php8.4-fpm
+    systemctl enable --now "php${PHP_VERSION}-fpm"
 
     step "$(t msg_cron)"
     if ! crontab -l 2>/dev/null | grep -qF "artisan schedule:run"; then
@@ -165,6 +174,8 @@ install_panel_native() {
         fi
     fi
 
+    configure_firewall "$HTTP_PORT" 443
+
     step "$(t msg_verify)"
     "$PHP_BIN" artisan --version >/dev/null || die "artisan does not run"
     if [[ "$VERIFY" -eq 0 ]]; then
@@ -174,7 +185,8 @@ install_panel_native() {
     local i
     # shellcheck disable=SC2034 # loop counter only
     for i in $(seq 1 20); do
-        if curl -fsS -o /dev/null --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/auth/login"; then
+        if curl -fsS -o /dev/null --resolve "$DOMAIN:${HTTP_PORT}:127.0.0.1" \
+            "http://${DOMAIN}:${HTTP_PORT}/auth/login"; then
             ok "$(t msg_panel_url "$appurl")"
             return
         fi

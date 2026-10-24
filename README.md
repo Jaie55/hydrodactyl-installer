@@ -1,4 +1,15 @@
 <p align="center">
+  <a href="README.md">
+    <img src="https://shieldcn.dev/badge/Language-English-success.svg?logo=github" alt="English">
+  </a>
+  <a href="README.es.md">
+    <img src="https://shieldcn.dev/badge/Language-Espa%C3%B1ol-181717.svg?logo=github" alt="Español">
+  </a>
+</p>
+
+<br/>
+
+<p align="center">
   <a href="https://hydrodactyl.dev/docs/hydrodactyl">
     <img src="https://shieldcn.dev/badge/Docs-hydrodactyl.dev-0ea5e9.svg?logo=readme" alt="Documentation">
   </a>
@@ -16,7 +27,7 @@
     <img src="https://shieldcn.dev/badge/Shellcheck-Passing-success.svg?logo=githubactions" alt="Shellcheck">
   </a>
   <a href="https://github.com/Jaie55/hydrodactyl-installer/releases">
-    <img src="https://shieldcn.dev/badge/Release-v0.3.0-181717.svg?logo=github" alt="Latest release: v0.3.0">
+    <img src="https://shieldcn.dev/badge/Release-v0.4.0-181717.svg?logo=github" alt="Latest release: v0.4.0">
   </a>
   <img src="https://shieldcn.dev/badge/Made%20with-Bash-1f425f.svg?logo=gnubash" alt="Made with Bash">
   <img src="https://shieldcn.dev/badge/Platform-Linux-f0b429.svg?logo=linux" alt="Platform Linux">
@@ -33,7 +44,7 @@ This script is not associated with the official Hydrodactyl, Blueprint or
 Pterodactyl projects.
 
 > [!NOTE]
-> v0.1.0 is an early release. The installer has been statically validated
+> v0.4.0 is an early release. The installer has been statically validated
 > (`bash -n`, Shellcheck, EN/ES key parity); test it on a throwaway VM before
 > using it on a production machine.
 
@@ -91,7 +102,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Jaie55/hydrodactyl-installer
 ```
 
 If `curl` is already installed, only the last line is needed. Once the script
-is running it installs any missing dependency by itself.
+is running it installs any missing dependency by itself. Without flags, an
+optional advanced step asks for the timezone, locale, HTTP port, PHP version
+and firewall.
 
 _Note: log in as root before executing the one-liner; running `sudo bash <(...)`
 does not always work._
@@ -133,7 +146,20 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | `--domain=DOMAIN`                | Panel domain (used by nginx and HTTPS)                                      |
 | `--dir=PATH`                     | Panel directory (default `/var/www/hydrodactyl`)                            |
 | `--db=mariadb\|mysql`            | Database engine for the native install                                      |
+| `--db-name=NAME`                 | Database name (default `panel`)                                             |
+| `--db-user=USER`                 | Database user (default `hydrodactyl`)                                       |
+| `--db-password=PASS`             | Database password (default: generated)                                      |
+| `--php=8.3\|8.4\|8.5`            | PHP version for the native install (default `8.4`)                          |
+| `--timezone=TZ`                  | Application timezone (default `UTC`)                                        |
+| `--locale=LOCALE`                | Application locale (default `en-US`)                                        |
+| `--http-port=PORT`               | HTTP port (default `80`)                                                    |
+| `--firewall` / `--no-firewall`   | Configure ufw (SSH, HTTP, HTTPS and daemon ports)                           |
 | `--daemon=wings\|elytra`         | Install a daemon                                                            |
+| `--daemon-version=TAG`           | Daemon release tag (default: latest)                                        |
+| `--daemon-port=PORT`             | Daemon listen port (default `8080`)                                         |
+| `--sftp-port=PORT`               | SFTP port (default `2022`)                                                  |
+| `--node-scheme=http\|https`      | Panel to daemon scheme (default `http`)                                     |
+| `--behind-proxy`                 | The node is behind a proxy                                                  |
 | `--daemon-config=PATH`           | Node config file downloaded from the panel                                  |
 | `--panel-url=URL`                | Panel URL for automatic node setup (default `http://127.0.0.1`)             |
 | `--api-key=KEY`                  | Panel application API key (asked if omitted)                                |
