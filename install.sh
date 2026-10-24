@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # hydrodactyl-installer - Copyright (C) 2026 Jaie55 and contributors
 # SPDX-License-Identifier: GPL-3.0-only
+# shellcheck disable=SC1091,SC2034 # libs are sourced at runtime and use these globals
 set -Eeuo pipefail
 
 INSTALLER_VERSION="0.1.0"
