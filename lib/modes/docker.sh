@@ -23,6 +23,9 @@ install_panel_docker() {
         fi
         [[ "$use_ssl" -eq 1 ]] || warn "$(t warn_prod_nossl)"
     fi
+    if [[ "$use_ssl" -eq 1 && "$HTTP_PORT" != "80" ]]; then
+        warn "$(t warn_ssl_port "$HTTP_PORT")"
+    fi
 
     local scheme="http" appurl
     [[ "$use_ssl" -eq 1 ]] && scheme="https"
@@ -68,6 +71,7 @@ install_panel_docker() {
             -e "s|'http://example.com'|'$(escape_sed "$appurl")'|" \
             -e "s|'noreply@example.com'|'noreply@$DOMAIN'|g" \
             -e "s|'80:80'|'$HTTP_PORT:80'|" \
+            -e "s|restart: no|restart: unless-stopped|g" \
             -e "s|APP_TIMEZONE: 'UTC'|APP_TIMEZONE: '$(escape_sed "$TIMEZONE")'|" \
             "$tmpdir/docker-compose.yml"
 
@@ -97,7 +101,9 @@ install_panel_docker() {
     step "$(t msg_docker_starting)"
     (cd "$PANEL_DIR" && docker compose up -d)
 
-    configure_firewall "$HTTP_PORT" 443
+    if [[ "$FIREWALL" -eq 1 ]]; then
+        warn "$(t warn_firewall_docker)"
+    fi
 
     step "$(t msg_verify)"
     if [[ "$VERIFY" -eq 0 ]]; then

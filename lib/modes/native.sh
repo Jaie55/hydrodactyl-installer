@@ -72,6 +72,9 @@ install_panel_native() {
         fi
         [[ "$use_ssl" -eq 1 ]] || warn "$(t warn_prod_nossl)"
     fi
+    if [[ "$use_ssl" -eq 1 && "$HTTP_PORT" != "80" ]]; then
+        warn "$(t warn_ssl_port "$HTTP_PORT")"
+    fi
 
     local scheme="http"
     [[ "$use_ssl" -eq 1 ]] && scheme="https"
@@ -146,8 +149,8 @@ install_panel_native() {
     ln -sf "$vhost" /etc/nginx/sites-enabled/hydrodactyl.conf
     rm -f /etc/nginx/sites-enabled/default
     nginx -t || die "nginx configuration test failed"
-    systemctl reload nginx
     systemctl enable --now "php${PHP_VERSION}-fpm"
+    systemctl reload nginx
 
     step "$(t msg_cron)"
     if ! crontab -l 2>/dev/null | grep -qF "artisan schedule:run"; then
@@ -167,10 +170,19 @@ install_panel_native() {
         ask le_email "$(t prompt_le_email)"
         pkg_install certbot python3-certbot-nginx
         if [[ -n "$le_email" ]]; then
-            certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$le_email" --redirect ||
-                warn "certbot failed; the panel is still available over HTTP."
+            if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$le_email" --redirect; then
+                set_env APP_URL "https://$DOMAIN"
+                appurl="https://$DOMAIN"
+                if [[ "$DEPLOY_ENV" == "production" ]]; then
+                    "$PHP_BIN" artisan optimize >/dev/null
+                else
+                    "$PHP_BIN" artisan optimize:clear >/dev/null
+                fi
+            else
+                warn "$(t msg_certbot_failed)"
+            fi
         else
-            warn "No email provided, skipping Let's Encrypt."
+            warn "$(t msg_no_email)"
         fi
     fi
 

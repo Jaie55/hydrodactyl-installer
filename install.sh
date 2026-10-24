@@ -4,7 +4,7 @@
 # shellcheck disable=SC1091,SC2034 # libs are sourced at runtime and use these globals
 set -Eeuo pipefail
 
-INSTALLER_VERSION="0.5.0"
+INSTALLER_VERSION="0.6.0"
 REPO_SLUG="Jaie55/hydrodactyl-installer"
 SCRIPT_REF="main"
 
@@ -12,6 +12,10 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && p
 
 # Minimal Ubuntu Server images ship without curl: install it when possible.
 if ! command -v curl >/dev/null 2>&1; then
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        printf 'This installer must be run as root (curl is missing and has to be installed).\n' >&2
+        exit 1
+    fi
     printf 'curl not found; installing it...\n'
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update -q &&
@@ -72,6 +76,7 @@ DB_KIND="mariadb"
 ASSUME_YES="0"
 VERIFY="1"
 DEPLOY_ENV=""
+LOCAL_INSTALL="0"
 DAEMON_CONFIG=""
 AUTO_NODE="1"
 PANEL_URL=""
@@ -145,6 +150,7 @@ Daemon
   --panel                   Install the panel too (used with --daemon)
 
 Other
+  --local                   Local test install: test mode, localhost domain
   --ssl                     Request a Let's Encrypt certificate
   --no-verify               Skip the final check that the panel answers
   --lang=en|es              Interface language
@@ -194,6 +200,7 @@ parse_args() {
             --node-scheme=*) NODE_SCHEME="${1#*=}" ;;
             --behind-proxy) BEHIND_PROXY=1 ;;
             --ssl) SSL=1 ;;
+            --local) LOCAL_INSTALL=1; DEPLOY_ENV='test' ;;
             --no-verify) VERIFY=0 ;;
             --lang=*) LANG_CHOICE="${1#*=}" ;;
             -y | --yes) ASSUME_YES=1 ;;
@@ -236,6 +243,28 @@ parse_args() {
     is_port "$SFTP_PORT" || die "Invalid SFTP port: $SFTP_PORT"
     [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]] || die "Invalid database name: $DB_NAME"
     [[ "$DB_USER" =~ ^[A-Za-z0-9_]+$ ]] || die "Invalid database user: $DB_USER"
+    if [[ -n "$DB_PASS" ]]; then
+        [[ "$DB_PASS" =~ ^[A-Za-z0-9._-]+$ ]] ||
+            die "Invalid database password (letters, digits, . _ - only)"
+    fi
+    if [[ -n "$DOMAIN" ]]; then
+        [[ "$DOMAIN" =~ ^[A-Za-z0-9._-]+$ ]] || die "Invalid domain: $DOMAIN"
+    fi
+    [[ "$TIMEZONE" =~ ^[A-Za-z0-9_+/-]+$ ]] || die "Invalid timezone: $TIMEZONE"
+    [[ "$APP_LOCALE" =~ ^[A-Za-z0-9_-]+$ ]] || die "Invalid locale: $APP_LOCALE"
+    [[ "$PANEL_DIR" =~ ^/[A-Za-z0-9/._-]+$ ]] || die "Invalid panel directory: $PANEL_DIR"
+    [[ -z "$NODE_PORTS" || "$NODE_PORTS" =~ ^[0-9,-]+$ ]] || die "Invalid allocations: $NODE_PORTS"
+    if [[ -n "$NODE_MEMORY" ]]; then
+        [[ "$NODE_MEMORY" =~ ^[0-9]+$ ]] || die "Invalid memory: $NODE_MEMORY"
+    fi
+    if [[ -n "$NODE_DISK" ]]; then
+        [[ "$NODE_DISK" =~ ^[0-9]+$ ]] || die "Invalid disk: $NODE_DISK"
+    fi
+    if [[ -n "$DAEMON_VERSION" ]]; then
+        [[ "$DAEMON_VERSION" =~ ^[0-9] ]] && DAEMON_VERSION="v$DAEMON_VERSION"
+        [[ "$DAEMON_VERSION" =~ ^v[0-9A-Za-z._-]+$ ]] ||
+            die "Invalid daemon version: $DAEMON_VERSION"
+    fi
 }
 
 choose_language() {
@@ -266,10 +295,13 @@ interactive_menu() {
     printf '%s%s%s:\n' "$C_BOLD" "$(t menu_title)" "$C_RESET"
     printf '  1) %s\n' "$(t menu_panel_docker)"
     printf '  2) %s\n' "$(t menu_panel_native)"
-    printf '  3) %s\n' "$(t menu_panel_daemon)"
-    printf '  4) %s\n' "$(t menu_daemon_wings)"
-    printf '  5) %s\n' "$(t menu_daemon_elytra)"
-    printf '  6) %s\n\n' "$(t menu_quit)"
+    printf '  3) %s\n' "$(t menu_panel_docker_wings)"
+    printf '  4) %s\n' "$(t menu_panel_docker_elytra)"
+    printf '  5) %s\n' "$(t menu_panel_native_wings)"
+    printf '  6) %s\n' "$(t menu_panel_native_elytra)"
+    printf '  7) %s\n' "$(t menu_daemon_wings)"
+    printf '  8) %s\n' "$(t menu_daemon_elytra)"
+    printf '  9) %s\n\n' "$(t menu_quit)"
 
     local choice=''
     read -r -p "$(t menu_choice) [1]: " choice || true
@@ -277,9 +309,12 @@ interactive_menu() {
         1) INSTALL_PANEL=1; MODE=docker ;;
         2) INSTALL_PANEL=1; MODE=native ;;
         3) INSTALL_PANEL=1; MODE=docker; INSTALL_DAEMON=1; DAEMON_TYPE=wings ;;
-        4) INSTALL_PANEL=0; INSTALL_DAEMON=1; DAEMON_TYPE=wings ;;
-        5) INSTALL_PANEL=0; INSTALL_DAEMON=1; DAEMON_TYPE=elytra ;;
-        6) exit 0 ;;
+        4) INSTALL_PANEL=1; MODE=docker; INSTALL_DAEMON=1; DAEMON_TYPE=elytra ;;
+        5) INSTALL_PANEL=1; MODE=native; INSTALL_DAEMON=1; DAEMON_TYPE=wings ;;
+        6) INSTALL_PANEL=1; MODE=native; INSTALL_DAEMON=1; DAEMON_TYPE=elytra ;;
+        7) INSTALL_PANEL=0; INSTALL_DAEMON=1; DAEMON_TYPE=wings ;;
+        8) INSTALL_PANEL=0; INSTALL_DAEMON=1; DAEMON_TYPE=elytra ;;
+        9) exit 0 ;;
         *) die "$(t msg_invalid_choice)" ;;
     esac
 }
@@ -365,6 +400,11 @@ choose_advanced() {
         [[ "$NODE_MEMORY" =~ ^[0-9]+$ ]] || die "Invalid memory: $NODE_MEMORY"
         [[ "$NODE_DISK" =~ ^[0-9]+$ ]] || die "Invalid disk: $NODE_DISK"
         [[ "$NODE_PORTS" =~ ^[0-9,-]+$ ]] || die "Invalid allocations: $NODE_PORTS"
+        if [[ -n "$DAEMON_VERSION" ]]; then
+            [[ "$DAEMON_VERSION" =~ ^[0-9] ]] && DAEMON_VERSION="v$DAEMON_VERSION"
+            [[ "$DAEMON_VERSION" =~ ^v[0-9A-Za-z._-]+$ ]] ||
+                die "Invalid daemon version: $DAEMON_VERSION"
+        fi
     fi
 }
 
@@ -428,7 +468,14 @@ main() {
         else
             info "$(t msg_env_production)"
         fi
-        if [[ -z "$DOMAIN" ]]; then ask DOMAIN "$(t prompt_domain)"; fi
+        if [[ -z "$DOMAIN" ]]; then
+            if [[ "$LOCAL_INSTALL" -eq 1 || "$DEPLOY_ENV" == "test" ]]; then
+                ask DOMAIN "$(t prompt_domain_test)" "localhost"
+            else
+                ask DOMAIN "$(t prompt_domain)"
+            fi
+        fi
+        [[ -n "$DOMAIN" ]] || die "$(t err_domain_required)"
         if [[ -z "$PANEL_DIR" ]]; then ask PANEL_DIR "$(t prompt_panel_dir)" "/var/www/hydrodactyl"; fi
         choose_advanced
         confirm "$(t confirm_install)" y || exit 0
@@ -437,6 +484,12 @@ main() {
             docker) install_panel_docker ;;
             native) install_panel_native ;;
         esac
+    fi
+
+    if [[ "$INSTALL_PANEL" == "1" && "$INSTALL_DAEMON" == "1" && "$AUTO_NODE" -eq 1 &&
+        "$ASSUME_YES" -eq 0 && -t 0 ]]; then
+        info "$(t msg_finish_setup)"
+        read -r -p "$(t msg_press_enter) " _ || true
     fi
 
     if [[ "$INSTALL_PANEL" != "1" && "$INSTALL_DAEMON" == "1" ]]; then

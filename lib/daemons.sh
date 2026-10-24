@@ -200,6 +200,7 @@ install_daemon() {
         curl -fsSL https://get.docker.com | sh
         systemctl enable --now docker
     fi
+    pkg_update
     pkg_install ca-certificates curl
 
     mkdir -p /etc/pterodactyl /var/lib/pterodactyl/volumes /var/lib/pterodactyl/archives

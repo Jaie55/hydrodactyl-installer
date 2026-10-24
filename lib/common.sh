@@ -174,7 +174,7 @@ random_password() {
 }
 
 escape_sed() {
-    printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
+    printf '%s' "$1" | sed -e 's/[\/&|]/\\&/g'
 }
 
 # is_local_domain DOMAIN -> 0 for localhost, reserved test TLDs, IPs and
@@ -214,10 +214,12 @@ configure_firewall() {
         [[ -n "$port" ]] || continue
         ufw allow "${port}/tcp" >/dev/null 2>&1 || true
     done
-    if ufw --force enable >/dev/null 2>&1; then
+    local out
+    if out="$(ufw --force enable 2>&1)"; then
         info "$(t msg_firewall_enabled)"
     else
         warn "$(t msg_firewall_failed)"
+        printf '%s\n' "$out" >&2
     fi
 }
 

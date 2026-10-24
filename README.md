@@ -27,7 +27,7 @@
     <img src="https://shieldcn.dev/badge/Shellcheck-Passing-success.svg?logo=githubactions" alt="Shellcheck">
   </a>
   <a href="https://github.com/Jaie55/hydrodactyl-installer/releases">
-    <img src="https://shieldcn.dev/badge/Release-v0.5.0-181717.svg?logo=github" alt="Latest release: v0.5.0">
+    <img src="https://shieldcn.dev/badge/Release-v0.6.0-181717.svg?logo=github" alt="Latest release: v0.6.0">
   </a>
   <img src="https://shieldcn.dev/badge/Made%20with-Bash-1f425f.svg?logo=gnubash" alt="Made with Bash">
   <img src="https://shieldcn.dev/badge/Platform-Linux-f0b429.svg?logo=linux" alt="Platform Linux">
@@ -44,7 +44,7 @@ This script is not associated with the official Hydrodactyl, Blueprint or
 Pterodactyl projects.
 
 > [!NOTE]
-> v0.5.0 is an early release. The installer has been statically validated
+> v0.6.0 is an early release. The installer has been statically validated
 > (`bash -n`, Shellcheck, EN/ES key parity); test it on a throwaway VM before
 > using it on a production machine.
 
@@ -91,8 +91,9 @@ Operating systems supported by this installation script.
 
 ## Using the installation scripts
 
-To install, run this command as root. The script asks whether you want the
-panel, a daemon, or both.
+To install, run this command as root. The menu offers every combination: panel
+only (Docker or native), panel + Wings/Elytra (Docker or native), or a daemon
+alone (Wings/Elytra). It then asks whether the panel is production or test.
 
 ```bash
 # Ubuntu Server minimal does not ship curl: install it first
@@ -141,6 +142,7 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | `--docker`                       | Install the panel with Docker Compose                                       |
 | `--native`                       | Install the panel natively (nginx + PHP-FPM + MariaDB/MySQL)                |
 | `--basic` / `--custom`           | Basic install (defaults) or custom install (asks every option)              |
+| `--local`                        | Local test install: test mode, `localhost` by default, no SSL               |
 | `--environment=production\|test` | Production: debug off, config cached, strict domain/HTTPS warnings. Test: debug on, config not cached |
 | `--source=stable\|canary\|custom` | `stable` = latest release tag, `canary` = `main`, `custom` = `--repo`/`--ref` |
 | `--repo=URL`                     | Custom panel repository (implies `--source=custom`)                         |
@@ -183,7 +185,9 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 `docker-compose.example.yml`, fills in the database passwords, domain and mail
 sender, stores it in `--dir` and runs `docker compose up -d`. Data lives under
 `/srv/pterodactyl`. The published stable image is used; the chosen source only
-affects where the compose file is taken from.
+affects where the compose file is taken from. Containers restart on boot
+(`unless-stopped`). ufw is skipped in Docker mode because Docker publishes its
+own ports and would bypass it.
 
 **Native** — installs nginx, PHP 8.4, MariaDB/MySQL, Node.js 22 + pnpm and
 Composer; clones the panel at the selected source; creates the database and
@@ -219,13 +223,14 @@ daemons, create a node in the panel to download its configuration.
 For a throwaway machine there is no need for a public domain or a certificate:
 
 ```bash
-sudo bash install.sh --native --domain panel.test --environment=test --no-verify -y
+sudo bash install.sh --native --local -y
 ```
 
-The installer verifies the panel against `127.0.0.1` with `curl --resolve`, so
-no DNS is involved, and Let's Encrypt is skipped automatically for local
-domains (`localhost`, `*.test`, `*.local`, private IPs). To open the panel in
-a browser from another machine, point the domain at the panel's IP there:
+The domain defaults to `localhost` in test/local mode, so no DNS or internet
+access is needed. The installer verifies the panel against `127.0.0.1` with
+`curl --resolve`, and Let's Encrypt is skipped automatically for local domains
+(`localhost`, `*.test`, `*.local`, private IPs). To open the panel in a browser
+from another machine, point the domain at the panel's IP there:
 
 ```bash
 echo '192.168.1.50 panel.test' | sudo tee -a /etc/hosts

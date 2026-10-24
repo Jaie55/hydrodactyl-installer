@@ -27,7 +27,7 @@
     <img src="https://shieldcn.dev/badge/Shellcheck-Passing-success.svg?logo=githubactions" alt="Shellcheck">
   </a>
   <a href="https://github.com/Jaie55/hydrodactyl-installer/releases">
-    <img src="https://shieldcn.dev/badge/Release-v0.5.0-181717.svg?logo=github" alt="Última release: v0.5.0">
+    <img src="https://shieldcn.dev/badge/Release-v0.6.0-181717.svg?logo=github" alt="Última release: v0.6.0">
   </a>
   <img src="https://shieldcn.dev/badge/Hecho%20con-Bash-1f425f.svg?logo=gnubash" alt="Hecho con Bash">
   <img src="https://shieldcn.dev/badge/Plataforma-Linux-f0b429.svg?logo=linux" alt="Plataforma Linux">
@@ -44,7 +44,7 @@ Este script no está asociado con los proyectos oficiales de Hydrodactyl,
 Blueprint ni Pterodactyl.
 
 > [!NOTE]
-> La v0.5.0 es una versión temprana. El instalador se ha validado de forma
+> La v0.6.0 es una versión temprana. El instalador se ha validado de forma
 > estática (`bash -n`, Shellcheck, paridad de claves EN/ES); pruébalo en una VM
 > desechable antes de usarlo en una máquina de producción.
 
@@ -91,8 +91,10 @@ Sistemas operativos soportados por este script de instalación.
 
 ## Uso de los scripts de instalación
 
-Para instalar, ejecuta este comando como root. El script pregunta si quieres el
-panel, un daemon o ambos.
+Para instalar, ejecuta este comando como root. El menú ofrece todas las
+combinaciones: solo panel (Docker o nativo), panel + Wings/Elytra (Docker o
+nativo), o un daemon solo (Wings/Elytra). Después pregunta si el panel es de
+producción o de pruebas.
 
 ```bash
 # Ubuntu Server minimal no trae curl: instálalo primero
@@ -142,6 +144,7 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | `--docker`                         | Instala el panel con Docker Compose                                             |
 | `--native`                         | Instala el panel de forma nativa (nginx + PHP-FPM + MariaDB/MySQL)              |
 | `--basic` / `--custom`             | Instalación básica (por defecto) o personalizada (pregunta cada opción)         |
+| `--local`                          | Instalación local de pruebas: modo test, `localhost` por defecto, sin SSL       |
 | `--environment=production\|test`   | Producción: debug off, config cacheada, avisos estrictos de dominio/HTTPS. Test: debug on, config sin cachear |
 | `--source=stable\|canary\|custom`  | `stable` = último tag de release, `canary` = `main`, `custom` = `--repo`/`--ref` |
 | `--repo=URL`                       | Repositorio del panel personalizado (implica `--source=custom`)                  |
@@ -183,9 +186,11 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 **Docker** — instala Docker si falta, descarga el
 `docker-compose.example.yml` oficial, rellena las contraseñas de base de datos,
 el dominio y el remitente de correo, lo guarda en `--dir` y ejecuta
-`docker compose up -d`. Los datos viven en `/srv/pterodactyl`. Se usa la imagen
-estable publicada; la fuente elegida solo afecta a de dónde se descarga el
-compose.
+`docker compose up -d`. Los datos viven en
+`/srv/pterodactyl`. Se usa la imagen estable publicada; la fuente elegida solo
+afecta a de dónde se descarga el compose. Los contenedores se reinician con el
+sistema (`unless-stopped`). ufw se omite en modo Docker porque Docker publica
+sus propios puertos y lo saltaría.
 
 **Nativo** — instala nginx, PHP 8.4, MariaDB/MySQL, Node.js 22 + pnpm y
 Composer; clona el panel desde la fuente elegida; crea la base de datos y el
@@ -222,11 +227,12 @@ configuración.
 Para una máquina desechable no hace falta dominio público ni certificado:
 
 ```bash
-sudo bash install.sh --native --domain panel.test --environment=test --no-verify -y
+sudo bash install.sh --native --local -y
 ```
 
-El instalador comprueba el panel contra `127.0.0.1` con `curl --resolve`, así
-que no interviene el DNS, y Let's Encrypt se omite automáticamente en dominios
+En modo test/local el dominio por defecto es `localhost`, así que no hace falta
+DNS ni salida a internet. El instalador comprueba el panel contra `127.0.0.1`
+con `curl --resolve`, y Let's Encrypt se omite automáticamente en dominios
 locales (`localhost`, `*.test`, `*.local`, IPs privadas). Para abrir el panel
 en un navegador desde otra máquina, apunta el dominio a la IP del panel allí:
 
