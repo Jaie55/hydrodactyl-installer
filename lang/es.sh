@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# Mensajes en castellano.
+
+MSG[msg_root_required]="Este instalador debe ejecutarse como root (prueba: sudo bash install.sh)."
+MSG[msg_os]="Sistema detectado: %s (%s), arquitectura %s."
+MSG[msg_family]="Familia de paquetes: %s."
+MSG[msg_invalid_choice]="Opción no válida."
+MSG[msg_downloading]="Descargando %s"
+MSG[msg_press_enter]="Pulsa Enter para continuar..."
+
+# Menú de idioma
+MSG[lang_title]="Elige idioma / Choose language"
+MSG[lang_prompt]="Idioma"
+
+# Menú principal
+MSG[menu_title]="¿Qué quieres instalar?"
+MSG[menu_panel_docker]="Solo el panel (Docker, recomendado)"
+MSG[menu_panel_native]="Solo el panel (nativo, Ubuntu/Debian)"
+MSG[menu_panel_daemon]="Panel + daemon (panel en Docker, daemon nativo)"
+MSG[menu_daemon_wings]="Solo el daemon (Pterodactyl Wings)"
+MSG[menu_daemon_elytra]="Solo el daemon (Elytra)"
+MSG[menu_quit]="Salir"
+MSG[menu_choice]="Selecciona una opción"
+
+# Fuente
+MSG[source_title]="¿Qué versión del panel quieres?"
+MSG[source_stable]="Última release estable"
+MSG[source_canary]="Canary (rama main)"
+MSG[source_custom]="Fork personalizado (URL de GitHub + rama/tag)"
+MSG[prompt_source_choice]="Selecciona una versión"
+MSG[prompt_repo_url]="URL del repositorio (ej. https://github.com/usuario/hydrodactyl)"
+MSG[prompt_repo_ref]="Rama o tag"
+MSG[msg_source_stable]="Usando la última release estable (%s)."
+MSG[msg_source_canary]="Usando la rama canary (main)."
+MSG[msg_source_custom]="Usando %s en %s."
+MSG[err_no_tags]="No se ha encontrado ningún tag de release del panel."
+MSG[msg_nothing_to_do]="Nada que hacer: pasa --panel y/o --daemon, o ejecuta sin argumentos para el menú."
+MSG[err_mode_required]="Elige --docker o --native."
+MSG[msg_native_only_debian]="La instalación nativa solo soporta Ubuntu/Debian (detectado %s). Usa --docker."
+
+# Preguntas
+MSG[prompt_domain]="Dominio del panel (ej. panel.ejemplo.com)"
+MSG[prompt_panel_dir]="Directorio del panel"
+MSG[prompt_db]="Motor de base de datos"
+MSG[prompt_ssl]="¿Pedir un certificado HTTPS gratuito con Let's Encrypt?"
+MSG[prompt_le_email]="Correo para Let's Encrypt"
+MSG[confirm_install]="Todo listo para instalar. ¿Continuar?"
+
+# Docker
+MSG[msg_docker_missing]="Docker o Docker Compose no está instalado."
+MSG[confirm_install_docker]="¿Instalar Docker ahora?"
+MSG[msg_docker_installing]="Instalando Docker..."
+MSG[msg_docker_compose]="Descargando el docker-compose..."
+MSG[msg_docker_filling]="Rellenando la configuración del compose..."
+MSG[msg_docker_starting]="Arrancando los contenedores del panel..."
+MSG[msg_docker_started]="Los contenedores del panel están levantados."
+MSG[msg_docker_source_ignored]="El modo Docker siempre usa la imagen estable publicada; la fuente elegida solo afecta al compose."
+MSG[msg_docker_reuse]="Reutilizando el compose existente en %s."
+
+# Nativo
+MSG[msg_apt_deps]="Instalando paquetes del sistema..."
+MSG[msg_php_ppa]="Añadiendo el repositorio de PHP (ondrej/php)..."
+MSG[msg_php]="Instalando PHP 8.4 y sus extensiones..."
+MSG[msg_node]="Instalando Node.js y pnpm..."
+MSG[msg_composer]="Instalando Composer..."
+MSG[msg_db_creating]="Creando la base de datos y el usuario..."
+MSG[msg_env]="Configurando el fichero de entorno..."
+MSG[msg_key]="Generando la clave de la aplicación..."
+MSG[msg_migrate]="Ejecutando las migraciones..."
+MSG[msg_perms]="Ajustando permisos de ficheros..."
+MSG[msg_nginx]="Configurando nginx..."
+MSG[msg_ssl]="Solicitando el certificado HTTPS..."
+MSG[msg_cron]="Añadiendo el cron del planificador..."
+MSG[msg_queue]="Creando el servicio del worker de colas..."
+MSG[msg_verify]="Verificando la instalación..."
+
+# Daemon
+MSG[msg_daemon_installing]="Instalando el daemon %s..."
+MSG[msg_proc_docker]="Instalando Docker..."
+MSG[msg_daemon_binary]="Descargando el binario de %s..."
+MSG[msg_daemon_service]="Creando el servicio systemd..."
+MSG[msg_daemon_started]="El servicio %s está en marcha."
+MSG[prompt_daemon_config_path]="Ruta del fichero de configuración del nodo descargado del panel (vacío para pegarlo después)"
+MSG[err_daemon_config_missing]="No se encuentra el fichero de configuración: %s"
+MSG[err_daemon_arch]="El daemon %s solo tiene binarios para amd64/arm64 (detectado %s)."
+MSG[msg_daemon_config_hint]="Pega la configuración del nodo del panel en %s y ejecuta 'systemctl restart %s'."
+
+# Fin
+MSG[msg_done]="Todo listo."
+MSG[msg_panel_url]="Tu panel debería estar disponible en %s"
+MSG[msg_log]="Log completo: %s"
+MSG[err_download]="No se pudo descargar %s"

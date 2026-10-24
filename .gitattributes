@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Shell scripts and templates must keep LF everywhere.
+*.sh text eol=lf
+*.tpl text eol=lf
