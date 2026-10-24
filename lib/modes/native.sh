@@ -134,12 +134,16 @@ install_panel_native() {
         set_env APP_DEBUG false
     fi
 
+    # The panel boots the encrypter early, so artisan cannot run without a
+    # key. Write one here instead of relying on artisan key:generate.
+    step "$(t msg_key)"
+    if ! grep -qE '^APP_KEY=base64:.+' .env; then
+        set_env APP_KEY "base64:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
+    fi
+
     COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
     pnpm install --frozen-lockfile
     pnpm run build
-
-    step "$(t msg_key)"
-    "$PHP_BIN" artisan key:generate --force
 
     step "$(t msg_migrate)"
     "$PHP_BIN" artisan migrate --seed --force
