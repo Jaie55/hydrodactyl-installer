@@ -10,6 +10,12 @@ install_panel_docker() {
         warn "$(t msg_docker_source_ignored)"
     fi
 
+    local use_ssl="$SSL"
+    if [[ "$use_ssl" -eq 1 ]] && is_local_domain "$DOMAIN"; then
+        warn "$(t msg_ssl_local "$DOMAIN")"
+        use_ssl=0
+    fi
+
     if ! has_cmd docker || ! docker compose version >/dev/null 2>&1; then
         warn "$(t msg_docker_missing)"
         confirm "$(t confirm_install_docker)" y || die "$(t msg_docker_missing)"
@@ -37,7 +43,7 @@ install_panel_docker() {
         local dbpass rootpass appurl le_email=''
         dbpass="$(random_password)"
         rootpass="$(random_password)"
-        if [[ "$SSL" -eq 1 ]]; then
+        if [[ "$use_ssl" -eq 1 ]]; then
             appurl="https://$DOMAIN"
             ask le_email "$(t prompt_le_email)"
         else
@@ -63,16 +69,20 @@ install_panel_docker() {
     (cd "$PANEL_DIR" && docker compose up -d)
 
     step "$(t msg_verify)"
-    local i url appurl
+    if [[ "$VERIFY" -eq 0 ]]; then
+        info "$(t msg_verify_skipped)"
+        return
+    fi
+    local i appurl
     appurl="http://$DOMAIN"
-    [[ "$SSL" -eq 1 ]] && appurl="https://$DOMAIN"
-    url="http://$DOMAIN/auth/login"
+    [[ "$use_ssl" -eq 1 ]] && appurl="https://$DOMAIN"
     for i in $(seq 1 30); do
-        if curl -fsS -o /dev/null "$url"; then
+        if curl -fsS -o /dev/null --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/auth/login"; then
             ok "$(t msg_panel_url "$appurl")"
             return
         fi
         sleep 5
     done
-    warn "The panel did not answer yet. Check: docker compose -f $PANEL_DIR/docker-compose.yml logs"
+    warn "$(t msg_verify_hint "$appurl")"
+    info "docker compose -f $PANEL_DIR/docker-compose.yml logs"
 }

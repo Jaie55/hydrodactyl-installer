@@ -74,6 +74,9 @@ MSG[msg_ssl]="Solicitando el certificado HTTPS..."
 MSG[msg_cron]="Añadiendo el cron del planificador..."
 MSG[msg_queue]="Creando el servicio del worker de colas..."
 MSG[msg_verify]="Verificando la instalación..."
+MSG[msg_verify_skipped]="Omitiendo la comprobación del panel (--no-verify)."
+MSG[msg_ssl_local]="Let's Encrypt necesita un dominio público; se omite el certificado para %s."
+MSG[msg_verify_hint]="El panel aún no responde en %s. Revisa los logs de nginx/PHP-FPM o Docker; para pruebas locales añade el dominio a /etc/hosts en la máquina del cliente."
 
 # Daemon
 MSG[msg_daemon_installing]="Instalando el daemon %s..."

@@ -51,6 +51,7 @@ DOMAIN=""
 SSL="0"
 DB_KIND="mariadb"
 ASSUME_YES="0"
+VERIFY="1"
 DAEMON_CONFIG=""
 
 usage() {
@@ -77,6 +78,7 @@ Daemon
 
 Other
   --ssl                     Request a Let's Encrypt certificate
+  --no-verify               Skip the final check that the panel answers
   --lang=en|es              Interface language
   -y, --yes                 Non-interactive, assume yes
   -h, --help                Show this help
@@ -99,6 +101,7 @@ parse_args() {
             --dir=*) PANEL_DIR="${1#*=}" ;;
             --db=*) DB_KIND="${1#*=}" ;;
             --ssl) SSL=1 ;;
+            --no-verify) VERIFY=0 ;;
             --lang=*) LANG_CHOICE="${1#*=}" ;;
             -y | --yes) ASSUME_YES=1 ;;
             -h | --help) usage; exit 0 ;;

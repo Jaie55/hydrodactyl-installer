@@ -74,6 +74,9 @@ MSG[msg_ssl]="Requesting the HTTPS certificate..."
 MSG[msg_cron]="Adding the scheduler cronjob..."
 MSG[msg_queue]="Creating the queue worker service..."
 MSG[msg_verify]="Verifying the installation..."
+MSG[msg_verify_skipped]="Skipping the panel check (--no-verify)."
+MSG[msg_ssl_local]="Let's Encrypt needs a public domain; skipping the certificate for %s."
+MSG[msg_verify_hint]="The panel is not answering at %s yet. Check the nginx/PHP-FPM or Docker logs; for local tests add the domain to /etc/hosts on the client machine."
 
 # Daemon
 MSG[msg_daemon_installing]="Installing the %s daemon..."

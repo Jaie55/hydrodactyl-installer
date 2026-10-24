@@ -176,6 +176,17 @@ escape_sed() {
     printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
 }
 
+# is_local_domain DOMAIN -> 0 for localhost, reserved test TLDs, IPs and
+# private ranges (Let's Encrypt cannot issue certificates for those).
+is_local_domain() {
+    local d="${1,,}"
+    [[ "$d" == localhost || "$d" == *.local || "$d" == *.test || "$d" == *.localhost ]] && return 0
+    [[ "$d" != *.* ]] && return 0
+    [[ "$d" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && return 0
+    [[ "$d" =~ ^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.) ]] && return 0
+    return 1
+}
+
 # set_env KEY VALUE [FILE] -> idempotent KEY=VALUE upsert in a dotenv file.
 set_env() {
     local key="$1" value="$2" file="${3:-.env}"

@@ -130,6 +130,7 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | `--daemon-config=PATH`             | Fichero de configuración del nodo descargado del panel                           |
 | `--panel`                          | Instala también el panel (junto con `--daemon`)                                  |
 | `--ssl`                            | Pide un certificado gratuito con Let's Encrypt                                  |
+| `--no-verify`                      | Omite la comprobación final de que el panel responde (CI/pruebas locales)        |
 | `--lang=en\|es`                    | Idioma de la interfaz                                                            |
 | `-y`, `--yes`                      | No interactivo, asume sí                                                         |
 | `-h`, `--help`                     | Muestra la ayuda                                                                 |
@@ -166,6 +167,23 @@ pega la configuración del nodo desde el panel y ejecuta
 Abre la URL del panel, completa el asistente de configuración (primer usuario
 administrador) y, para los daemons, crea un nodo en el panel para descargar su
 configuración.
+
+## Prueba local sin DNS
+
+Para una máquina desechable no hace falta dominio público ni certificado:
+
+```bash
+sudo bash install.sh --native --domain panel.test --no-verify -y
+```
+
+El instalador comprueba el panel contra `127.0.0.1` con `curl --resolve`, así
+que no interviene el DNS, y Let's Encrypt se omite automáticamente en dominios
+locales (`localhost`, `*.test`, `*.local`, IPs privadas). Para abrir el panel
+en un navegador desde otra máquina, apunta el dominio a la IP del panel allí:
+
+```bash
+echo '192.168.1.50 panel.test' | sudo tee -a /etc/hosts
+```
 
 ## Desarrollo y pruebas
 

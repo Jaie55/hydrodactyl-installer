@@ -130,6 +130,7 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | `--daemon-config=PATH`           | Node config file downloaded from the panel                                  |
 | `--panel`                        | Install the panel too (with `--daemon`)                                     |
 | `--ssl`                          | Request a free Let's Encrypt certificate                                    |
+| `--no-verify`                    | Skip the final check that the panel answers (CI/local tests)                |
 | `--lang=en\|es`                  | Interface language                                                          |
 | `-y`, `--yes`                    | Non-interactive, assume yes                                                 |
 | `-h`, `--help`                   | Show help                                                                   |
@@ -163,6 +164,23 @@ configuration from the panel and run `systemctl restart wings` (or `elytra`).
 
 Open the panel URL, finish the setup wizard (first admin account) and, for
 daemons, create a node in the panel to download its configuration.
+
+## Local test without DNS
+
+For a throwaway machine there is no need for a public domain or a certificate:
+
+```bash
+sudo bash install.sh --native --domain panel.test --no-verify -y
+```
+
+The installer verifies the panel against `127.0.0.1` with `curl --resolve`, so
+no DNS is involved, and Let's Encrypt is skipped automatically for local
+domains (`localhost`, `*.test`, `*.local`, private IPs). To open the panel in
+a browser from another machine, point the domain at the panel's IP there:
+
+```bash
+echo '192.168.1.50 panel.test' | sudo tee -a /etc/hosts
+```
 
 ## Development & testing
 

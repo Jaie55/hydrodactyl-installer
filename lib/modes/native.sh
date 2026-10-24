@@ -55,6 +55,12 @@ install_panel_native() {
 
     fetch_panel
 
+    local use_ssl="$SSL"
+    if [[ "$use_ssl" -eq 1 ]] && is_local_domain "$DOMAIN"; then
+        warn "$(t msg_ssl_local "$DOMAIN")"
+        use_ssl=0
+    fi
+
     step "$(t msg_db_creating)"
     systemctl enable --now "${DB_KIND}"
     local dbpass
@@ -71,7 +77,7 @@ install_panel_native() {
 
     step "$(t msg_env)"
     local appurl
-    if [[ "$SSL" -eq 1 ]]; then appurl="https://$DOMAIN"; else appurl="http://$DOMAIN"; fi
+    if [[ "$use_ssl" -eq 1 ]]; then appurl="https://$DOMAIN"; else appurl="http://$DOMAIN"; fi
 
     cd "$PANEL_DIR"
     [[ -f .env ]] || cp .env.example .env
@@ -127,7 +133,7 @@ install_panel_native() {
     systemctl daemon-reload
     systemctl enable --now pyroq.service
 
-    if [[ "$SSL" -eq 1 ]]; then
+    if [[ "$use_ssl" -eq 1 ]]; then
         step "$(t msg_ssl)"
         local le_email=''
         ask le_email "$(t prompt_le_email)"
@@ -142,9 +148,17 @@ install_panel_native() {
 
     step "$(t msg_verify)"
     "$PHP_BIN" artisan --version >/dev/null || die "artisan does not run"
-    if curl -fsS -o /dev/null "$appurl/auth/login"; then
-        ok "$(t msg_panel_url "$appurl")"
-    else
-        warn "The panel is not answering yet at $appurl. Check: journalctl -u php8.4-fpm -n 50"
+    if [[ "$VERIFY" -eq 0 ]]; then
+        info "$(t msg_verify_skipped)"
+        return
     fi
+    local i
+    for i in $(seq 1 20); do
+        if curl -fsS -o /dev/null --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/auth/login"; then
+            ok "$(t msg_panel_url "$appurl")"
+            return
+        fi
+        sleep 3
+    done
+    warn "$(t msg_verify_hint "$appurl")"
 }
