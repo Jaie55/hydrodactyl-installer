@@ -4,7 +4,7 @@
 # shellcheck disable=SC1091,SC2034 # libs are sourced at runtime and use these globals
 set -Eeuo pipefail
 
-INSTALLER_VERSION="0.4.0"
+INSTALLER_VERSION="0.5.0"
 REPO_SLUG="Jaie55/hydrodactyl-installer"
 SCRIPT_REF="main"
 
@@ -58,6 +58,7 @@ source "$SCRIPT_DIR/lib/daemons.sh"
 
 MODE=""
 LANG_CHOICE=""
+INSTALL_TYPE=""
 INSTALL_PANEL="ask"
 INSTALL_DAEMON="0"
 DAEMON_TYPE=""
@@ -101,6 +102,8 @@ Hydrodactyl installer ${INSTALLER_VERSION}
 Usage: bash install.sh [options]
 
 Panel
+  --basic                   Basic install: defaults, no extra questions
+  --custom                  Custom install: ask for every option
   --docker                  Install the panel with Docker
   --native                  Install the panel natively (Ubuntu/Debian)
   --environment=production|test
@@ -153,6 +156,8 @@ EOF
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --basic) INSTALL_TYPE=basic ;;
+            --custom) INSTALL_TYPE=custom ;;
             --docker) MODE=docker ;;
             --native) MODE=native ;;
             --environment=*) DEPLOY_ENV="${1#*=}" ;;
@@ -213,6 +218,10 @@ parse_args() {
     case "$DEPLOY_ENV" in
         '' | production | test) ;;
         *) die "Invalid environment: $DEPLOY_ENV (use production or test)" ;;
+    esac
+    case "$INSTALL_TYPE" in
+        '' | basic | custom) ;;
+        *) die "Invalid install type: $INSTALL_TYPE (use basic or custom)" ;;
     esac
     case "$PHP_VERSION" in
         8.3 | 8.4 | 8.5) ;;
@@ -292,11 +301,31 @@ choose_environment() {
     esac
 }
 
+choose_install_type() {
+    if [[ -n "$INSTALL_TYPE" ]]; then
+        return
+    fi
+    if [[ "$ASSUME_YES" -eq 1 || ! -t 0 ]]; then
+        INSTALL_TYPE=basic
+        return
+    fi
+
+    printf '\n%s%s%s:\n' "$C_BOLD" "$(t install_type_title)" "$C_RESET"
+    printf '  1) %s\n  2) %s\n' "$(t install_type_basic)" "$(t install_type_custom)"
+    local choice=''
+    read -r -p "$(t prompt_install_type) [1]: " choice || true
+    case "${choice:-1}" in
+        1) INSTALL_TYPE=basic ;;
+        2) INSTALL_TYPE=custom ;;
+        *) die "$(t msg_invalid_choice)" ;;
+    esac
+}
+
 choose_advanced() {
+    [[ "$INSTALL_TYPE" == "custom" ]] || return
     if [[ "$ASSUME_YES" -eq 1 || ! -t 0 ]]; then
         return
     fi
-    confirm "$(t confirm_advanced)" n || return
 
     if [[ "$INSTALL_PANEL" == "1" ]]; then
         ask TIMEZONE "$(t prompt_timezone)" "UTC"
@@ -308,10 +337,16 @@ choose_advanced() {
         if confirm "$(t prompt_firewall)" n; then FIREWALL=1; fi
     fi
     if [[ "$INSTALL_DAEMON" == "1" ]]; then
+        ask DAEMON_VERSION "$(t prompt_daemon_version)" ""
         ask DAEMON_PORT "$(t prompt_daemon_port)" "8080"
         ask SFTP_PORT "$(t prompt_sftp_port)" "2022"
         ask NODE_SCHEME "$(t prompt_node_scheme)" "http"
         if confirm "$(t prompt_behind_proxy)" n; then BEHIND_PROXY=1; fi
+        ask NODE_NAME "$(t prompt_node_name)" "$(hostname -s)"
+        ask NODE_FQDN "$(t prompt_node_fqdn)" "$(primary_ip)"
+        ask NODE_MEMORY "$(t prompt_memory)" "$(detect_memory_mb)"
+        ask NODE_DISK "$(t prompt_disk)" "$(detect_disk_mb)"
+        ask NODE_PORTS "$(t prompt_ports)" "25565-25665,27015-27150"
         if confirm "$(t prompt_firewall)" n; then FIREWALL=1; fi
     fi
 
@@ -326,6 +361,9 @@ choose_advanced() {
         http | https) ;;
         *) die "Invalid node scheme: $NODE_SCHEME (use http or https)" ;;
     esac
+    [[ "$NODE_MEMORY" =~ ^[0-9]+$ ]] || die "Invalid memory: $NODE_MEMORY"
+    [[ "$NODE_DISK" =~ ^[0-9]+$ ]] || die "Invalid disk: $NODE_DISK"
+    [[ "$NODE_PORTS" =~ ^[0-9,-]+$ ]] || die "Invalid allocations: $NODE_PORTS"
 }
 
 choose_source() {
@@ -376,6 +414,8 @@ main() {
         usage
         die "$(t msg_nothing_to_do)"
     fi
+
+    choose_install_type
 
     if [[ "$INSTALL_PANEL" == "1" ]]; then
         [[ -n "$MODE" ]] || die "$(t err_mode_required)"

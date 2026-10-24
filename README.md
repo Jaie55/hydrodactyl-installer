@@ -27,7 +27,7 @@
     <img src="https://shieldcn.dev/badge/Shellcheck-Passing-success.svg?logo=githubactions" alt="Shellcheck">
   </a>
   <a href="https://github.com/Jaie55/hydrodactyl-installer/releases">
-    <img src="https://shieldcn.dev/badge/Release-v0.4.0-181717.svg?logo=github" alt="Latest release: v0.4.0">
+    <img src="https://shieldcn.dev/badge/Release-v0.5.0-181717.svg?logo=github" alt="Latest release: v0.5.0">
   </a>
   <img src="https://shieldcn.dev/badge/Made%20with-Bash-1f425f.svg?logo=gnubash" alt="Made with Bash">
   <img src="https://shieldcn.dev/badge/Platform-Linux-f0b429.svg?logo=linux" alt="Platform Linux">
@@ -44,7 +44,7 @@ This script is not associated with the official Hydrodactyl, Blueprint or
 Pterodactyl projects.
 
 > [!NOTE]
-> v0.4.0 is an early release. The installer has been statically validated
+> v0.5.0 is an early release. The installer has been statically validated
 > (`bash -n`, Shellcheck, EN/ES key parity); test it on a throwaway VM before
 > using it on a production machine.
 
@@ -102,9 +102,10 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Jaie55/hydrodactyl-installer
 ```
 
 If `curl` is already installed, only the last line is needed. Once the script
-is running it installs any missing dependency by itself. Without flags, an
-optional advanced step asks for the timezone, locale, HTTP port, PHP version
-and firewall.
+is running it installs any missing dependency by itself. Interactive runs then
+ask for a **basic** install (defaults) or a **custom** one, where every option
+is prompted with an example (timezone `Europe/Madrid`, locale `es-ES`, PHP
+version, ports, firewall, node resources...).
 
 _Note: log in as root before executing the one-liner; running `sudo bash <(...)`
 does not always work._
@@ -139,6 +140,7 @@ sudo bash install.sh --daemon=wings --daemon-config=/root/config.yml
 | -------------------------------- | --------------------------------------------------------------------------- |
 | `--docker`                       | Install the panel with Docker Compose                                       |
 | `--native`                       | Install the panel natively (nginx + PHP-FPM + MariaDB/MySQL)                |
+| `--basic` / `--custom`           | Basic install (defaults) or custom install (asks every option)              |
 | `--environment=production\|test` | Production: debug off, config cached, strict domain/HTTPS warnings. Test: debug on, config not cached |
 | `--source=stable\|canary\|custom` | `stable` = latest release tag, `canary` = `main`, `custom` = `--repo`/`--ref` |
 | `--repo=URL`                     | Custom panel repository (implies `--source=custom`)                         |

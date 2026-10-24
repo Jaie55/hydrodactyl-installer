@@ -42,6 +42,9 @@ install_panel_docker() {
     mkdir -p "$PANEL_DIR"
 
     if [[ -f "$PANEL_DIR/docker-compose.yml" ]]; then
+        if ! (cd "$PANEL_DIR" && docker compose config -q >/dev/null 2>&1); then
+            die "$(t err_compose_invalid "$PANEL_DIR/docker-compose.yml")"
+        fi
         info "$(t msg_docker_reuse "$PANEL_DIR/docker-compose.yml")"
     else
         step "$(t msg_docker_compose)"
@@ -68,20 +71,27 @@ install_panel_docker() {
             -e "s|APP_TIMEZONE: 'UTC'|APP_TIMEZONE: '$(escape_sed "$TIMEZONE")'|" \
             "$tmpdir/docker-compose.yml"
 
-        sed -i "/APP_TIMEZONE:/a\\
-            APP_LOCALE: '$(escape_sed "$APP_LOCALE")'" "$tmpdir/docker-compose.yml"
+        sed -i "/APP_TIMEZONE:/{
+            p
+            s|^\([[:space:]]*\)APP_TIMEZONE:.*|\1APP_LOCALE: '$(escape_sed "$APP_LOCALE")'|
+        }" "$tmpdir/docker-compose.yml"
 
         if [[ -n "$le_email" ]]; then
             sed -i -e "s|# LE_EMAIL: \"\"|LE_EMAIL: \"$(escape_sed "$le_email")\"|" "$tmpdir/docker-compose.yml"
         fi
 
         if [[ "$DEPLOY_ENV" == "test" ]]; then
-            sed -i "/APP_ENV: 'production'/a\\
-            APP_DEBUG: 'true'" "$tmpdir/docker-compose.yml"
+            sed -i "/APP_ENV: 'production'/{
+                p
+                s|^\([[:space:]]*\)APP_ENV: 'production'.*|\1APP_DEBUG: 'true'|
+            }" "$tmpdir/docker-compose.yml"
         fi
 
         cp "$tmpdir/docker-compose.yml" "$PANEL_DIR/docker-compose.yml"
         rm -rf "$tmpdir"
+        if ! (cd "$PANEL_DIR" && docker compose config -q >/dev/null 2>&1); then
+            die "$(t err_compose_invalid "$PANEL_DIR/docker-compose.yml")"
+        fi
     fi
 
     step "$(t msg_docker_starting)"
