@@ -361,9 +361,11 @@ choose_advanced() {
         http | https) ;;
         *) die "Invalid node scheme: $NODE_SCHEME (use http or https)" ;;
     esac
-    [[ "$NODE_MEMORY" =~ ^[0-9]+$ ]] || die "Invalid memory: $NODE_MEMORY"
-    [[ "$NODE_DISK" =~ ^[0-9]+$ ]] || die "Invalid disk: $NODE_DISK"
-    [[ "$NODE_PORTS" =~ ^[0-9,-]+$ ]] || die "Invalid allocations: $NODE_PORTS"
+    if [[ "$INSTALL_DAEMON" == "1" ]]; then
+        [[ "$NODE_MEMORY" =~ ^[0-9]+$ ]] || die "Invalid memory: $NODE_MEMORY"
+        [[ "$NODE_DISK" =~ ^[0-9]+$ ]] || die "Invalid disk: $NODE_DISK"
+        [[ "$NODE_PORTS" =~ ^[0-9,-]+$ ]] || die "Invalid allocations: $NODE_PORTS"
+    fi
 }
 
 choose_source() {
