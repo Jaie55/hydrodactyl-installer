@@ -4,6 +4,8 @@
 # shellcheck disable=SC1091,SC2034 # libs are sourced at runtime and use these globals
 set -Eeuo pipefail
 
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+
 INSTALLER_VERSION="0.8.0"
 REPO_SLUG="Jaie55/hydrodactyl-installer"
 SCRIPT_REF="main"
@@ -86,6 +88,7 @@ LOCAL_INSTALL="0"
 DAEMON_CONFIG=""
 AUTO_NODE="1"
 PANEL_URL=""
+DETECTED_PANEL_URL=""
 API_KEY=""
 NODE_NAME=""
 NODE_FQDN=""
@@ -394,6 +397,7 @@ detect_existing() {
         if [[ -f "$PANEL_DIR/.env" ]]; then
             url="$(grep -E '^APP_URL=' "$PANEL_DIR/.env" | head -n1 | cut -d= -f2- || true)"
         fi
+        DETECTED_PANEL_URL="$url"
         ref=''
         if [[ -d "$PANEL_DIR/.git" ]]; then
             ref="$(git -C "$PANEL_DIR" describe --tags --always 2>/dev/null || true)"

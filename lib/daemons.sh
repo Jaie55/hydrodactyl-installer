@@ -82,7 +82,8 @@ auto_configure_node() {
     has_cmd ip || pkg_install iproute2
 
     if [[ -z "$PANEL_URL" ]]; then
-        ask PANEL_URL "$(t prompt_panel_url)" "http://127.0.0.1"
+        local default_panel_url="${SUMMARY_PANEL_URL:-${DETECTED_PANEL_URL:-http://127.0.0.1}}"
+        ask PANEL_URL "$(t prompt_panel_url)" "$default_panel_url"
     fi
     [[ "$PANEL_URL" == *://* ]] || PANEL_URL="http://$PANEL_URL"
     PANEL_URL="${PANEL_URL%/}"
