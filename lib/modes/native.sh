@@ -50,7 +50,7 @@ install_panel_native() {
         pkg_update
     fi
 
-    step "$(t msg_php)"
+    step "$(t msg_php "$PHP_VERSION")"
     pkg_install "php${PHP_VERSION}-cli" "php${PHP_VERSION}-fpm" "php${PHP_VERSION}-common" \
         "php${PHP_VERSION}-gd" "php${PHP_VERSION}-mysql" "php${PHP_VERSION}-mbstring" \
         "php${PHP_VERSION}-bcmath" "php${PHP_VERSION}-xml" "php${PHP_VERSION}-curl" \
@@ -194,6 +194,9 @@ install_panel_native() {
 
     if [[ "$use_ssl" -eq 1 ]]; then
         step "$(t msg_ssl)"
+        if ! getent hosts "$DOMAIN" >/dev/null 2>&1; then
+            warn "$(t warn_dns "$DOMAIN")"
+        fi
         local le_email=''
         ask le_email "$(t prompt_le_email)"
         pkg_install certbot python3-certbot-nginx

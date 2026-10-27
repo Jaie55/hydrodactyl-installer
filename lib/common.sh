@@ -5,6 +5,7 @@
 # Shared helpers for every installer mode.
 
 C_RESET='' C_BOLD='' C_RED='' C_GREEN='' C_YELLOW='' C_BLUE=''
+DIE_CALLED=0
 if [[ -t 1 ]]; then
     C_RESET=$'\033[0m'
     C_BOLD=$'\033[1m'
@@ -15,6 +16,13 @@ if [[ -t 1 ]]; then
 fi
 
 LOG_FILE="${LOG_FILE:-/var/log/hydrodactyl-installer.log}"
+
+init_log() {
+    [[ -n "${LOG_FILE:-}" ]] || return 0
+    if [[ -e "$LOG_FILE" || -w "$(dirname "$LOG_FILE")" ]]; then
+        touch "$LOG_FILE" 2>/dev/null && chmod 600 "$LOG_FILE" 2>/dev/null || true
+    fi
+}
 
 _log() {
     local level="$1"
@@ -51,8 +59,21 @@ error() {
 }
 
 die() {
+    DIE_CALLED=1
     error "$*"
     exit 1
+}
+
+on_error() {
+    local rc=$? line="${BASH_LINENO[0]:-?}"
+    if [[ "${DIE_CALLED:-0}" -eq 1 ]]; then
+        return 0
+    fi
+    printf '%s\n' "$(t msg_unexpected_error "$rc" "$line")" >&2
+    if [[ -r "${LOG_FILE:-}" ]]; then
+        printf '%s\n' "$(t msg_log_tail "$LOG_FILE")" >&2
+        tail -n 20 "$LOG_FILE" >&2 2>/dev/null || true
+    fi
 }
 
 require_root() {
@@ -125,6 +146,10 @@ service_restart() {
 # ask VAR "Prompt: " [default]
 ask() {
     local __var="$1" __prompt="$2" __default="${3:-}" __answer=''
+    if [[ "${ASSUME_YES:-0}" -eq 1 ]]; then
+        printf -v "$__var" '%s' "$__default"
+        return 0
+    fi
     if [[ -t 0 ]]; then
         if [[ -n "$__default" ]]; then
             read -r -p "$__prompt [$__default]: " __answer || true
@@ -138,6 +163,10 @@ ask() {
 # ask_secret VAR "Prompt: "
 ask_secret() {
     local __var="$1" __prompt="$2" __answer=''
+    if [[ "${ASSUME_YES:-0}" -eq 1 ]]; then
+        printf -v "$__var" '%s' ''
+        return 0
+    fi
     if [[ -t 0 ]]; then
         read -r -s -p "$__prompt: " __answer || true
         printf '\n'

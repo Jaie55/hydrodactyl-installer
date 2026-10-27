@@ -6,9 +6,9 @@ set -Eeuo pipefail
 
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
-INSTALLER_VERSION="0.8.0"
+INSTALLER_VERSION="0.9.0"
 REPO_SLUG="Jaie55/hydrodactyl-installer"
-SCRIPT_REF="main"
+SCRIPT_REF="${HYDRODACTYL_SCRIPT_REF:-main}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
 
@@ -104,8 +104,17 @@ PANEL_ADMIN_FIRST=""
 PANEL_ADMIN_LAST=""
 PANEL_ADMIN_PASSWORD=""
 PANEL_ADMIN_CREATED="0"
+ADMIN_EMAIL=""
+ADMIN_USERNAME=""
+ADMIN_PASSWORD=""
+AUTO_ADMIN="1"
+ADMIN_CREDENTIALS_FILE="/root/hydrodactyl-admin.txt"
 TEST_SERVER="ask"
 TEST_SERVER_PORT="25565"
+TEST_SERVER_EGG="vanilla"
+TEST_SERVER_MEMORY="1024"
+TEST_SERVER_DISK="5120"
+DRY_RUN="0"
 NODE_ID=""
 API_KEY=""
 NODE_NAME=""
@@ -162,7 +171,7 @@ Panel
   --db-name=NAME            Database name (default: panel)
   --db-user=USER            Database user (default: hydrodactyl)
   --db-password=PASS        Database password (default: generated)
-  --php=8.3|8.4|8.5         PHP version for the native install (default: 8.4)
+  --php=8.4|8.5             PHP version for the native install (default: 8.4)
   --timezone=TZ             Application timezone (default: UTC)
   --locale=LOCALE           Application locale (default: en-US)
   --http-port=PORT          HTTP port (default: 80)
@@ -177,8 +186,8 @@ Daemon
   --sftp-port=PORT          SFTP port (default: 2022)
   --node-scheme=http|https  Panel -> daemon scheme (default: http)
   --behind-proxy            The node is behind a proxy
-  --panel-url=URL           Panel URL for automatic node setup
-  --api-key=KEY             Panel application API key (asked if omitted)
+  --panel-url=URL           Panel URL for automatic node setup (default: detected panel URL)
+  --api-key=KEY             Panel application API key (created automatically for a local panel)
   --node-name=NAME          Node name (default: hostname)
   --node-fqdn=HOST          Node FQDN/IP reachable from the panel
   --memory=MB               Node memory in MiB (default: detected)
@@ -189,6 +198,14 @@ Daemon
   --panel                   Install the panel too (used with --daemon)
   --test-server             Create a Minecraft test server on port 25565
   --no-test-server          Do not offer the Minecraft test server
+  --test-server-egg=EGG     Egg for the test server (default: vanilla)
+  --test-server-port=PORT   Test server port (default: 25565)
+  --test-server-memory=MB   Test server memory in MiB (default: 1024)
+  --test-server-disk=MB     Test server disk in MiB (default: 5120)
+  --admin-email=EMAIL       Admin email for a new panel (default: admin@example.com)
+  --admin-username=NAME     Admin username (default: admin)
+  --admin-password=PASS     Admin password (default: generated)
+  --no-auto-admin           Do not create the first admin automatically
 
 Maintenance
   --check-updates           Show installed and latest versions
@@ -203,8 +220,10 @@ Other
   --local                   Local test install: test mode, localhost domain
   --ssl                     Request a Let's Encrypt certificate
   --no-verify               Skip the final check that the panel answers
+  --dry-run                 Show the plan and exit without installing
+  --version                 Show the installer version
   --lang=en|es              Interface language
-  -y, --yes                 Non-interactive, assume yes
+  -y, --yes                 Non-interactive, use defaults
   -h, --help                Show this help
 EOF
 }
@@ -231,6 +250,16 @@ parse_args() {
             --no-node) AUTO_NODE=0 ;;
             --test-server) TEST_SERVER=1 ;;
             --no-test-server) TEST_SERVER=0 ;;
+            --test-server-egg=*) TEST_SERVER_EGG="${1#*=}" ;;
+            --test-server-port=*) TEST_SERVER_PORT="${1#*=}" ;;
+            --test-server-memory=*) TEST_SERVER_MEMORY="${1#*=}" ;;
+            --test-server-disk=*) TEST_SERVER_DISK="${1#*=}" ;;
+            --dry-run) DRY_RUN=1 ;;
+            --version) printf 'Hydrodactyl installer %s\n' "$INSTALLER_VERSION"; exit 0 ;;
+            --admin-email=*) ADMIN_EMAIL="${1#*=}" ;;
+            --admin-username=*) ADMIN_USERNAME="${1#*=}" ;;
+            --admin-password=*) ADMIN_PASSWORD="${1#*=}" ;;
+            --no-auto-admin) AUTO_ADMIN=0 ;;
             --source=*) SOURCE="${1#*=}" ;;
             --repo=*) CUSTOM_REPO="${1#*=}"; SOURCE=custom ;;
             --ref=*) CUSTOM_REF="${1#*=}" ;;
@@ -297,8 +326,8 @@ parse_args() {
         *) die "Invalid uninstall target: $UNINSTALL_TARGET" ;;
     esac
     case "$PHP_VERSION" in
-        8.3 | 8.4 | 8.5) ;;
-        *) die "Invalid PHP version: $PHP_VERSION (use 8.3, 8.4 or 8.5)" ;;
+        8.4 | 8.5) ;;
+        *) die "Invalid PHP version: $PHP_VERSION (use 8.4 or 8.5)" ;;
     esac
     case "$NODE_SCHEME" in
         http | https) ;;
@@ -307,11 +336,31 @@ parse_args() {
     is_port "$HTTP_PORT" || die "Invalid HTTP port: $HTTP_PORT"
     is_port "$DAEMON_PORT" || die "Invalid daemon port: $DAEMON_PORT"
     is_port "$SFTP_PORT" || die "Invalid SFTP port: $SFTP_PORT"
+    is_port "$TEST_SERVER_PORT" || die "Invalid test server port: $TEST_SERVER_PORT"
+    if [[ ! "$TEST_SERVER_MEMORY" =~ ^[0-9]+$ ]] || ((TEST_SERVER_MEMORY <= 0)); then
+        die "Invalid test server memory: $TEST_SERVER_MEMORY"
+    fi
+    if [[ ! "$TEST_SERVER_DISK" =~ ^[0-9]+$ ]] || ((TEST_SERVER_DISK <= 0)); then
+        die "Invalid test server disk: $TEST_SERVER_DISK"
+    fi
+    [[ -n "$TEST_SERVER_EGG" ]] || die "Invalid test server egg"
     [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]] || die "Invalid database name: $DB_NAME"
     [[ "$DB_USER" =~ ^[A-Za-z0-9_]+$ ]] || die "Invalid database user: $DB_USER"
     if [[ -n "$DB_PASS" ]]; then
         [[ "$DB_PASS" =~ ^[A-Za-z0-9._-]+$ ]] ||
             die "Invalid database password (letters, digits, . _ - only)"
+    fi
+    if [[ -n "$ADMIN_EMAIL" ]]; then
+        [[ "$ADMIN_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] ||
+            die "Invalid admin email: $ADMIN_EMAIL"
+    fi
+    if [[ -n "$ADMIN_USERNAME" ]]; then
+        [[ "$ADMIN_USERNAME" =~ ^[a-z0-9][a-z0-9_.-]*[a-z0-9]$ ]] ||
+            die "Invalid admin username: $ADMIN_USERNAME"
+    fi
+    if [[ -n "$ADMIN_PASSWORD" ]]; then
+        [[ ${#ADMIN_PASSWORD} -ge 8 ]] || die "Admin password must be at least 8 characters"
+        [[ "$ADMIN_PASSWORD" != *$'\n'* ]] || die "Invalid admin password"
     fi
     if [[ -n "$DOMAIN" ]]; then
         [[ "$DOMAIN" =~ ^[A-Za-z0-9._-]+$ ]] || die "Invalid domain: $DOMAIN"
@@ -498,6 +547,30 @@ print_summary() {
     fi
 }
 
+preflight_checks() {
+    local mem disk
+    mem="$(detect_memory_mb 2>/dev/null || true)"
+    if [[ "$mem" =~ ^[0-9]+$ ]] && ((mem > 0 && mem < 1024)); then
+        warn "$(t warn_low_memory "$mem")"
+    fi
+    disk="$(df -m / 2>/dev/null | awk 'NR==2 {print $4}' || true)"
+    if [[ "$disk" =~ ^[0-9]+$ ]] && ((disk > 0 && disk < 5120)); then
+        warn "$(t warn_low_disk "$disk")"
+    fi
+    if [[ "$DEPLOY_ENV" == "production" && -n "$DOMAIN" ]] && ! is_local_domain "$DOMAIN" &&
+        ! getent hosts "$DOMAIN" >/dev/null 2>&1; then
+        warn "$(t warn_dns "$DOMAIN")"
+    fi
+    if [[ "$FAMILY" != "debian" ]]; then
+        if [[ "$INSTALL_DAEMON" == "1" || "$MODE" == "native" ]]; then
+            warn "$(t warn_native_os "$DISTRO_NAME")"
+        fi
+    fi
+    if [[ "$DEPLOY_ENV" == "production" && "$INSTALL_PANEL" == "1" && "$FIREWALL" -eq 0 ]]; then
+        warn "$(t warn_firewall_off)"
+    fi
+}
+
 choose_install_type() {
     if [[ -n "$INSTALL_TYPE" ]]; then
         return
@@ -551,8 +624,8 @@ choose_advanced() {
     is_port "$DAEMON_PORT" || die "Invalid daemon port: $DAEMON_PORT"
     is_port "$SFTP_PORT" || die "Invalid SFTP port: $SFTP_PORT"
     case "$PHP_VERSION" in
-        8.3 | 8.4 | 8.5) ;;
-        *) die "Invalid PHP version: $PHP_VERSION (use 8.3, 8.4 or 8.5)" ;;
+        8.4 | 8.5) ;;
+        *) die "Invalid PHP version: $PHP_VERSION (use 8.4 or 8.5)" ;;
     esac
     case "$NODE_SCHEME" in
         http | https) ;;
@@ -602,7 +675,23 @@ choose_source() {
     esac
 }
 
+print_plan() {
+    printf '\n%s%s%s\n' "$C_BOLD" "$(t dry_run_title)" "$C_RESET"
+    if [[ "$INSTALL_PANEL" == "1" ]]; then
+        info "$(t dry_run_panel "$MODE" "$SOURCE" "$DOMAIN" "$PANEL_DIR")"
+    fi
+    if [[ "$INSTALL_DAEMON" == "1" ]]; then
+        info "$(t dry_run_daemon "${DAEMON_TYPE:-wings}" "${NODE_FQDN:-$(primary_ip)}" "$DAEMON_PORT" "$SFTP_PORT")"
+        if [[ "$AUTO_NODE" -eq 1 ]]; then
+            info "$(t dry_run_node "${NODE_NAME:-$(hostname -s)}" "${NODE_FQDN:-$(primary_ip)}")"
+        fi
+    fi
+    info "$(t dry_run_done)"
+}
+
 main() {
+    init_log
+    trap on_error ERR
     parse_args "$@"
 
     detect_os
@@ -661,6 +750,11 @@ main() {
         [[ -n "$DOMAIN" ]] || die "$(t err_domain_required)"
         if [[ -z "$PANEL_DIR" ]]; then ask PANEL_DIR "$(t prompt_panel_dir)" "/var/www/hydrodactyl"; fi
         choose_advanced
+        preflight_checks
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            print_plan
+            exit 0
+        fi
         confirm "$(t confirm_install)" y || exit 0
 
         case "$MODE" in
@@ -686,6 +780,13 @@ main() {
     fi
 
     if [[ "$INSTALL_DAEMON" == "1" ]]; then
+        if [[ "$INSTALL_PANEL" != "1" ]]; then
+            preflight_checks
+            if [[ "$DRY_RUN" -eq 1 ]]; then
+                print_plan
+                exit 0
+            fi
+        fi
         install_daemon "${DAEMON_TYPE:-wings}"
     fi
 
@@ -693,7 +794,7 @@ main() {
         if [[ "$TEST_SERVER" == "ask" ]]; then
             if [[ "$ASSUME_YES" -eq 1 || ! -t 0 ]]; then
                 TEST_SERVER=0
-            elif confirm "$(t prompt_test_server)" y; then
+            elif confirm "$(t prompt_test_server "$TEST_SERVER_PORT")" y; then
                 TEST_SERVER=1
             else
                 TEST_SERVER=0

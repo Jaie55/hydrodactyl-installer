@@ -11,13 +11,73 @@ panel_current_ref() {
     git -C "$PANEL_DIR" describe --tags --always 2>/dev/null || printf '?'
 }
 
+panel_current_branch() {
+    git -C "$PANEL_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true
+}
+
+panel_repo_url() {
+    git -C "$PANEL_DIR" remote get-url origin 2>/dev/null || printf '%s' "$PANEL_UPSTREAM_REPO"
+}
+
 panel_latest_tag() {
-    git ls-remote --tags --refs "$PANEL_UPSTREAM_REPO" 'v*' |
+    local repo="${1:-$PANEL_UPSTREAM_REPO}"
+    git ls-remote --tags --refs "$repo" 'v*' |
         awk -F/ '{print $NF}' | sort -V | tail -n1
 }
 
+panel_update_ref() {
+    local repo branch
+    repo="$(panel_repo_url)"
+    branch="$(panel_current_branch)"
+    if [[ -n "$branch" && "$branch" != "HEAD" ]]; then
+        printf '%s' "$branch"
+        return 0
+    fi
+    panel_latest_tag "$repo"
+}
+
+panel_latest_for_check() {
+    local repo branch
+    repo="$(panel_repo_url)"
+    branch="$(panel_current_branch)"
+    if [[ -n "$branch" && "$branch" != "HEAD" ]]; then
+        git ls-remote --heads "$repo" "refs/heads/$branch" 2>/dev/null | awk '{print $1}' | head -n1
+    else
+        panel_latest_tag "$repo"
+    fi
+}
+
+panel_env_value() {
+    local key="$1" value
+    [[ -f "$PANEL_DIR/.env" ]] || return 0
+    value="$(grep -E "^${key}=" "$PANEL_DIR/.env" | head -n1 | cut -d= -f2- || true)"
+    value="${value%\"}"
+    value="${value#\"}"
+    printf '%s' "$value"
+}
+
+backup_panel_db() {
+    local db user pass host file
+    if [[ ! -f "$PANEL_DIR/.env" ]] || ! has_cmd mysqldump; then
+        return 0
+    fi
+    db="$(panel_env_value DB_DATABASE)"; db="${db:-panel}"
+    user="$(panel_env_value DB_USERNAME)"; user="${user:-hydrodactyl}"
+    pass="$(panel_env_value DB_PASSWORD)"
+    host="$(panel_env_value DB_HOST)"; host="${host:-127.0.0.1}"
+    mkdir -p /var/backups
+    file="/var/backups/hydrodactyl-$(date +%Y%m%d-%H%M%S).sql.gz"
+    if MYSQL_PWD="$pass" mysqldump -h "$host" -u "$user" "$db" 2>/dev/null | gzip >"$file"; then
+        chmod 600 "$file"
+        ok "$(t msg_db_backup "$file")"
+    else
+        rm -f "$file"
+        warn "$(t msg_db_backup_failed)"
+    fi
+}
+
 daemon_current_version() {
-    "/usr/local/bin/$1" version 2>/dev/null | head -n1 | awk '{print $2}'
+    daemon_version_string "$1"
 }
 
 daemon_latest_tag() {
@@ -34,13 +94,23 @@ native_php_bin() {
 }
 
 check_updates() {
-    local current latest found=0 bin
+    local current latest found=0 bin branch local_head
     step "$(t upd_check)"
 
     if panel_native_installed; then
         found=1
+        branch="$(panel_current_branch)"
+        local_head="$(git -C "$PANEL_DIR" rev-parse HEAD 2>/dev/null || true)"
         current="$(panel_current_ref)"
-        latest="$(panel_latest_tag || true)"
+        latest="$(panel_latest_for_check || true)"
+        if [[ -n "$branch" && "$branch" != "HEAD" ]]; then
+            current="$branch@${local_head:0:7}"
+            if [[ -n "$latest" && "$latest" == "$local_head" ]]; then
+                latest="$current"
+            else
+                latest="$branch@${latest:0:7}"
+            fi
+        fi
         info "$(t upd_panel_versions "$current" "${latest:-?}")"
         if [[ -n "$latest" && "$current" == "$latest" ]]; then
             ok "$(t upd_panel_current)"
@@ -71,35 +141,45 @@ check_updates() {
 }
 
 update_panel_native() {
-    local latest php_bin
-    latest="$(panel_latest_tag || true)"
-    if [[ -z "$latest" ]]; then
+    local ref php_bin
+    ref="$(panel_update_ref || true)"
+    if [[ -z "$ref" ]]; then
         warn "$(t err_no_tags)"
         return 1
     fi
-    step "$(t upd_updating_panel "$latest")"
-    git -C "$PANEL_DIR" fetch --depth=1 origin "$latest"
-    git -C "$PANEL_DIR" reset --hard FETCH_HEAD
-    (
+    step "$(t upd_updating_panel "$ref")"
+    php_bin="$(native_php_bin)"
+    backup_panel_db
+    "$php_bin" "$PANEL_DIR/artisan" down >/dev/null 2>&1 || true
+
+    if ! (
         cd "$PANEL_DIR" || exit 1
+        git fetch --depth=1 origin "$ref"
+        git reset --hard FETCH_HEAD
         COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction \
             --prefer-dist --optimize-autoloader
         pnpm install --frozen-lockfile
         pnpm run build
-    )
-    php_bin="$(native_php_bin)"
-    "$php_bin" "$PANEL_DIR/artisan" optimize:clear >/dev/null 2>&1 || true
-    "$php_bin" "$PANEL_DIR/artisan" migrate --force
-    "$php_bin" "$PANEL_DIR/artisan" optimize
+        "$php_bin" artisan optimize:clear >/dev/null 2>&1 || true
+        "$php_bin" artisan migrate --force
+        "$php_bin" artisan optimize
+    ); then
+        "$php_bin" "$PANEL_DIR/artisan" up >/dev/null 2>&1 || true
+        warn "$(t upd_failed)"
+        return 1
+    fi
+
     chown -R "$WEB_USER":"$WEB_USER" "$PANEL_DIR"
     systemctl reload "$(basename "$php_bin")-fpm" >/dev/null 2>&1 || true
     systemctl reload nginx >/dev/null 2>&1 || true
     systemctl restart pyroq.service >/dev/null 2>&1 || true
+    "$php_bin" "$PANEL_DIR/artisan" up >/dev/null 2>&1 || true
     ok "$(t upd_done)"
 }
 
 update_panel_docker() {
     step "$(t upd_updating_docker)"
+    warn "$(t warn_docker_backup)"
     (cd "$PANEL_DIR" && docker compose pull && docker compose up -d)
     ok "$(t upd_done)"
 }
@@ -108,27 +188,28 @@ update_daemon() {
     local bin="$1" saved="$DAEMON_VERSION"
     step "$(t upd_updating_daemon "$bin")"
     DAEMON_VERSION=""
-    download "$(daemon_binary_url "$bin")" "/usr/local/bin/$bin"
+    has_cmd jq || pkg_install jq
+    install_daemon_binary "$bin"
     DAEMON_VERSION="$saved"
-    chmod +x "/usr/local/bin/$bin"
     systemctl restart "$bin" >/dev/null 2>&1 || true
     ok "$(t upd_done)"
 }
 
 update_all() {
-    local bin did=0
+    local bin did=0 failed=0
     if [[ -z "$UPDATE_TARGET" || "$UPDATE_TARGET" == "panel" ]]; then
-        if panel_native_installed; then update_panel_native; did=1; fi
-        if panel_docker_installed; then update_panel_docker; did=1; fi
+        if panel_native_installed; then update_panel_native || failed=1; did=1; fi
+        if panel_docker_installed; then update_panel_docker || failed=1; did=1; fi
     fi
     if [[ -z "$UPDATE_TARGET" || "$UPDATE_TARGET" == "daemon" ]]; then
         for bin in wings elytra; do
-            if daemon_installed "$bin"; then update_daemon "$bin"; did=1; fi
+            if daemon_installed "$bin"; then update_daemon "$bin" || failed=1; did=1; fi
         done
     fi
     if [[ "$did" -eq 0 ]]; then
         warn "$(t msg_nothing_installed)"
     fi
+    [[ "$failed" -eq 0 ]]
 }
 
 uninstall_panel_native() {
@@ -227,4 +308,5 @@ uninstall_all() {
             done
             ;;
     esac
+    return 0
 }

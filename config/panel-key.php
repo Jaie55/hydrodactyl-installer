@@ -22,6 +22,11 @@ if (!in_array($locale, $languages, true)) {
 $created = 0;
 $user = User::query()->where('root_admin', true)->orderBy('id')->first();
 if (!$user) {
+    if (getenv('HYDRO_AUTO_ADMIN') === '0') {
+        fwrite(STDERR, "No administrator user found. Create one in the panel first.\n");
+        exit(1);
+    }
+
     $email = getenv('HYDRO_ADMIN_EMAIL') ?: 'admin@example.com';
     $username = getenv('HYDRO_ADMIN_USER') ?: 'admin';
     $first = getenv('HYDRO_ADMIN_FIRST') ?: 'Admin';
@@ -51,10 +56,17 @@ ApiKey::query()
     ->where('memo', 'hydrodactyl-installer')
     ->delete();
 
-$permissions = [];
-foreach (AdminAcl::getResourceList() as $resource) {
-    $permissions['r_' . $resource] = AdminAcl::READ | AdminAcl::WRITE;
-}
+$permissions = [
+    'r_servers' => AdminAcl::READ | AdminAcl::WRITE,
+    'r_nodes' => AdminAcl::READ | AdminAcl::WRITE,
+    'r_allocations' => AdminAcl::READ | AdminAcl::WRITE,
+    'r_users' => AdminAcl::READ,
+    'r_locations' => AdminAcl::READ | AdminAcl::WRITE,
+    'r_nests' => AdminAcl::READ,
+    'r_eggs' => AdminAcl::READ,
+    'r_database_hosts' => AdminAcl::NONE,
+    'r_server_databases' => AdminAcl::NONE,
+];
 
 $key = $app->make(KeyCreationService::class)
     ->setKeyType(ApiKey::TYPE_APPLICATION)

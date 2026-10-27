@@ -22,6 +22,41 @@ daemon_binary_url() {
     fi
 }
 
+daemon_binary_digest() {
+    local bin="$1" repo api name
+    case "$bin" in
+        wings) repo="pterodactyl/wings" ;;
+        elytra) repo="pyrohost/elytra" ;;
+        *) return 1 ;;
+    esac
+    name="${bin}_linux_${ARCH}"
+    if [[ -n "$DAEMON_VERSION" ]]; then
+        api="https://api.github.com/repos/$repo/releases/tags/$DAEMON_VERSION"
+    else
+        api="https://api.github.com/repos/$repo/releases/latest"
+    fi
+    has_cmd jq || return 1
+    curl -fsSL -H 'User-Agent: hydrodactyl-installer' "$api" 2>/dev/null |
+        jq -r --arg name "$name" '.assets[] | select(.name == $name) | .digest // empty' 2>/dev/null |
+        sed -n 's/^sha256://p' | head -n1
+}
+
+install_daemon_binary() {
+    local bin="$1" url digest
+    url="$(daemon_binary_url "$bin")"
+    digest="$(daemon_binary_digest "$bin" || true)"
+    download "$url" "/usr/local/bin/$bin"
+    if [[ -n "$digest" ]]; then
+        if ! printf '%s  %s\n' "$digest" "/usr/local/bin/$bin" | sha256sum -c - >/dev/null 2>&1; then
+            rm -f "/usr/local/bin/$bin"
+            die "$(t err_checksum "$bin")"
+        fi
+    else
+        warn "$(t warn_no_checksum "$bin")"
+    fi
+    chmod +x "/usr/local/bin/$bin"
+}
+
 daemon_firewall_ports() {
     local port
     local -a ports=("$DAEMON_PORT" "$SFTP_PORT")
@@ -34,6 +69,26 @@ daemon_firewall_ports() {
 
 detect_memory_mb() {
     awk '/^MemTotal:/ {printf "%d\n", $2 / 1024}' /proc/meminfo
+}
+
+daemon_version_string() {
+    "/usr/local/bin/$1" version 2>/dev/null | head -n1 |
+        sed -E -e 's/^[^ ]+ +//' -e 's/^vv/v/' || true
+}
+
+daemon_check() {
+    local bin="$1" port="$2" i
+    for i in 1 2 3 4 5; do
+        if systemctl is-active --quiet "$bin"; then
+            if ! has_cmd ss || ss -ltn 2>/dev/null | grep -q ":$port "; then
+                return 0
+            fi
+        fi
+        sleep 1
+    done
+    warn "$(t warn_daemon_not_listening "$bin" "$port" "$bin")"
+    journalctl -u "$bin" -n 20 --no-pager 2>/dev/null || true
+    return 1
 }
 
 detect_disk_mb() {
@@ -64,12 +119,79 @@ panel_api() {
     curl "${args[@]}" "${PANEL_URL}${path}"
 }
 
-ports_json() {
-    local IFS=',' port out=''
-    for port in $NODE_PORTS; do
-        out+="${out:+,}\"$port\""
+ensure_node_allocations() {
+    local node_id="$1" alloc_json port item start end p
+    local -a missing=() ranges=()
+    local -A have=()
+
+    if ! alloc_json="$(panel_api GET "/api/application/nodes/$node_id/allocations?per_page=1000")"; then
+        warn "$(t msg_alloc_failed)"
+        return 0
+    fi
+
+    while IFS= read -r port; do
+        if [[ -n "$port" ]]; then
+            have["$port"]=1
+        fi
+    done < <(printf '%s' "$alloc_json" | jq -r '.data[].attributes.port')
+
+    local IFS=','
+    for item in $NODE_PORTS; do
+        if [[ "$item" == *-* ]]; then
+            start="${item%-*}"
+            end="${item#*-}"
+            if [[ "$start" =~ ^[0-9]+$ && "$end" =~ ^[0-9]+$ ]]; then
+                for ((p=start; p<=end; p++)); do
+                    if [[ -z "${have[$p]:-}" ]]; then
+                        missing+=("$p")
+                        have["$p"]=2
+                    fi
+                done
+            fi
+        elif [[ -n "$item" && -z "${have[$item]:-}" ]]; then
+            missing+=("$item")
+            have["$item"]=2
+        fi
     done
-    printf '[%s]' "$out"
+
+    [[ ${#missing[@]} -gt 0 ]] || return 0
+
+    start=''
+    end=''
+    for p in "${missing[@]}"; do
+        if [[ -z "$start" ]]; then
+            start="$p"
+            end="$p"
+            continue
+        fi
+        if (( p == end + 1 )); then
+            end="$p"
+        else
+            if [[ "$start" == "$end" ]]; then
+                ranges+=("$start")
+            else
+                ranges+=("$start-$end")
+            fi
+            start="$p"
+            end="$p"
+        fi
+    done
+    if [[ -n "$start" ]]; then
+        if [[ "$start" == "$end" ]]; then
+            ranges+=("$start")
+        else
+            ranges+=("$start-$end")
+        fi
+    fi
+
+    local ports_array payload
+    ports_array="$(printf '%s\n' "${ranges[@]}" | jq -R . | jq -s '.')" || return 0
+    payload="$(jq -n --argjson ports "$ports_array" '{ip: "0.0.0.0", ports: $ports}')" || return 0
+    if panel_api POST "/api/application/nodes/$node_id/allocations" "$payload" >/dev/null; then
+        info "$(t msg_alloc_created "${#ranges[@]}")"
+    else
+        warn "$(t msg_alloc_failed)"
+    fi
 }
 
 # Create a location, a node and its allocations through the panel API, then
@@ -121,26 +243,43 @@ auto_configure_node() {
     [[ -n "$NODE_DISK" ]] || NODE_DISK="$(detect_disk_mb)"
     [[ -n "$NODE_PORTS" ]] || NODE_PORTS="25565-25665,27015-27150"
 
-    local response location_id payload node_id
-    if ! response="$(panel_api GET /api/application/locations)"; then
-        warn "$(t msg_api_failed)"
-        return 1
+    local response location_id payload node_id existing_node
+    node_id=''
+    location_id=''
+
+    if response="$(panel_api GET "/api/application/nodes?per_page=1000")"; then
+        existing_node="$(printf '%s' "$response" | jq -c --arg fqdn "$NODE_FQDN" \
+            '.data[] | select(.attributes.fqdn == $fqdn)' | head -n1)"
+    else
+        existing_node=''
     fi
 
-    location_id="$(printf '%s' "$response" | jq -r '.data[0].attributes.id // empty')"
+    if [[ -n "$existing_node" ]]; then
+        node_id="$(printf '%s' "$existing_node" | jq -r '.attributes.id')"
+        location_id="$(printf '%s' "$existing_node" | jq -r '.attributes.location_id // empty')"
+        info "$(t msg_node_reused "$node_id")"
+    fi
+
     if [[ -z "$location_id" ]]; then
-        payload="$(jq -n '{short: "default", long: "Default"}')"
-        if ! response="$(panel_api POST /api/application/locations "$payload")"; then
+        if ! response="$(panel_api GET /api/application/locations)"; then
             warn "$(t msg_api_failed)"
             return 1
         fi
-        location_id="$(printf '%s' "$response" | jq -r '.attributes.id // empty')"
+        location_id="$(printf '%s' "$response" | jq -r '.data[0].attributes.id // empty')"
+        if [[ -z "$location_id" ]]; then
+            payload="$(jq -n '{short: "default", long: "Default"}')"
+            if ! response="$(panel_api POST /api/application/locations "$payload")"; then
+                warn "$(t msg_api_failed)"
+                return 1
+            fi
+            location_id="$(printf '%s' "$response" | jq -r '.attributes.id // empty')"
+        fi
+        if [[ -z "$location_id" ]]; then
+            warn "$(t msg_api_failed)"
+            return 1
+        fi
+        info "$(t msg_node_location "$location_id")"
     fi
-    if [[ -z "$location_id" ]]; then
-        warn "$(t msg_api_failed)"
-        return 1
-    fi
-    info "$(t msg_node_location "$location_id")"
 
     if [[ "$NODE_SCHEME" == "https" ]]; then
         warn "$(t warn_node_https)"
@@ -164,21 +303,26 @@ auto_configure_node() {
           upload_size: 100, daemon_listen: $daemon_port, daemon_sftp: $sftp_port,
           maintenance_mode: false, daemon_type: $type}')" || return 1
 
-    if ! response="$(panel_api POST /api/application/nodes "$payload")"; then
-        warn "$(t msg_api_failed)"
-        return 1
-    fi
-    node_id="$(printf '%s' "$response" | jq -r '.attributes.id // empty')"
-    if [[ -z "$node_id" ]]; then
-        warn "$(t msg_api_failed)"
-        return 1
+    if [[ -n "$node_id" ]]; then
+        if ! response="$(panel_api PATCH "/api/application/nodes/$node_id" "$payload")"; then
+            warn "$(t msg_api_failed)"
+            return 1
+        fi
+    else
+        if ! response="$(panel_api POST /api/application/nodes "$payload")"; then
+            warn "$(t msg_api_failed)"
+            return 1
+        fi
+        node_id="$(printf '%s' "$response" | jq -r '.attributes.id // empty')"
+        if [[ -z "$node_id" ]]; then
+            warn "$(t msg_api_failed)"
+            return 1
+        fi
+        info "$(t msg_node_created "$node_id")"
     fi
     NODE_ID="$node_id"
-    info "$(t msg_node_created "$node_id")"
 
-    payload="$(jq -n --argjson ports "$(ports_json)" '{ip: "0.0.0.0", ports: $ports}')"
-    panel_api POST "/api/application/nodes/${node_id}/allocations" "$payload" >/dev/null ||
-        warn "$(t msg_alloc_failed)"
+    ensure_node_allocations "$node_id"
 
     if [[ -f /etc/pterodactyl/config.yml ]]; then
         cp -a /etc/pterodactyl/config.yml "/etc/pterodactyl/config.yml.bak.$(date +%s)"
@@ -199,7 +343,7 @@ auto_configure_node() {
 }
 
 install_daemon() {
-    local type="$1" name bin url
+    local type="$1" name bin
     local -a fw_ports
     case "$type" in
         wings) name="Wings"; bin="wings" ;;
@@ -217,6 +361,16 @@ install_daemon() {
         step "$(t msg_proc_docker)"
         curl -fsSL https://get.docker.com | sh
         systemctl enable --now docker
+    else
+        systemctl enable --now docker >/dev/null 2>&1 || true
+    fi
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        docker info >/dev/null 2>&1 && break
+        sleep 1
+    done
+    if ! docker info >/dev/null 2>&1; then
+        warn "$(t warn_docker_not_ready)"
     fi
     pkg_update
     pkg_install ca-certificates curl
@@ -224,11 +378,10 @@ install_daemon() {
     mkdir -p /etc/pterodactyl /var/lib/pterodactyl/volumes /var/lib/pterodactyl/archives
 
     step "$(t msg_daemon_binary "$name")"
-    url="$(daemon_binary_url "$type")"
-    download "$url" "/usr/local/bin/$bin"
-    chmod +x "/usr/local/bin/$bin"
+    has_cmd jq || pkg_install jq
+    install_daemon_binary "$type"
     SUMMARY_DAEMON="$name"
-    SUMMARY_DAEMON_VERSION="$("/usr/local/bin/$bin" version 2>/dev/null | head -n1 || true)"
+    SUMMARY_DAEMON_VERSION="$(daemon_version_string "$bin")"
 
     if [[ -n "$DAEMON_CONFIG" ]]; then
         [[ -f "$DAEMON_CONFIG" ]] || die "$(t err_daemon_config_missing "$DAEMON_CONFIG")"
@@ -239,10 +392,16 @@ install_daemon() {
     cat >"/etc/systemd/system/$bin.service" <<EOF
 [Unit]
 Description=$name Server Management Daemon
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+PartOf=docker.service
 
 [Service]
 User=root
 Group=root
+WorkingDirectory=/etc/pterodactyl
+LimitNOFILE=4096
 Restart=always
 ExecStart=/usr/local/bin/$bin --config /etc/pterodactyl/config.yml
 StartLimitInterval=180
@@ -256,6 +415,7 @@ EOF
 
     if [[ -f /etc/pterodactyl/config.yml ]]; then
         systemctl enable --now "$bin"
+        daemon_check "$bin" "$DAEMON_PORT" || true
         mapfile -t fw_ports < <(daemon_firewall_ports)
         configure_firewall "${fw_ports[@]}"
         ok "$(t msg_daemon_started "$bin")"
@@ -265,6 +425,7 @@ EOF
     if [[ "$AUTO_NODE" -eq 1 ]] && { [[ -n "$API_KEY" ]] || confirm "$(t confirm_auto_node)" y; }; then
         if auto_configure_node "$type" "$bin"; then
             systemctl enable --now "$bin"
+            daemon_check "$bin" "$DAEMON_PORT" || true
             mapfile -t fw_ports < <(daemon_firewall_ports)
             configure_firewall "${fw_ports[@]}"
             ok "$(t msg_daemon_started "$bin")"

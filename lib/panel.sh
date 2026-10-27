@@ -15,6 +15,7 @@ panel_php_run() {
             -e "HYDRO_ADMIN_FIRST=$PANEL_ADMIN_FIRST" \
             -e "HYDRO_ADMIN_LAST=$PANEL_ADMIN_LAST" \
             -e "HYDRO_ADMIN_PASS=$PANEL_ADMIN_PASSWORD" \
+            -e "HYDRO_AUTO_ADMIN=$AUTO_ADMIN" \
             panel php) <"$script" || rc=$?
     else
         local php_bin
@@ -24,6 +25,7 @@ panel_php_run() {
             HYDRO_ADMIN_FIRST="$PANEL_ADMIN_FIRST" \
             HYDRO_ADMIN_LAST="$PANEL_ADMIN_LAST" \
             HYDRO_ADMIN_PASS="$PANEL_ADMIN_PASSWORD" \
+            HYDRO_AUTO_ADMIN="$AUTO_ADMIN" \
             "$php_bin") <"$script" || rc=$?
         chown -R "${WEB_USER:-www-data}:${WEB_USER:-www-data}" \
             "$PANEL_DIR/storage" "$PANEL_DIR/bootstrap/cache" 2>/dev/null || true
@@ -40,11 +42,11 @@ ensure_panel_api_key() {
         return 1
     fi
 
-    PANEL_ADMIN_EMAIL="${PANEL_ADMIN_EMAIL:-admin@example.com}"
-    PANEL_ADMIN_USER="${PANEL_ADMIN_USER:-admin}"
+    PANEL_ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
+    PANEL_ADMIN_USER="${ADMIN_USERNAME:-admin}"
     PANEL_ADMIN_FIRST="${PANEL_ADMIN_FIRST:-Admin}"
     PANEL_ADMIN_LAST="${PANEL_ADMIN_LAST:-}"
-    PANEL_ADMIN_PASSWORD="${PANEL_ADMIN_PASSWORD:-$(random_password 16)}"
+    PANEL_ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(random_password 16)}"
 
     local rc=0
     out="$(panel_php_run 2>&1)" || rc=$?
@@ -61,6 +63,10 @@ ensure_panel_api_key() {
                 ;;
         esac
     done <<<"$out"
+
+    if [[ "$PANEL_ADMIN_CREATED" == "1" ]]; then
+        save_admin_credentials
+    fi
 
     if [[ "$rc" -ne 0 ]]; then
         if [[ "$quiet" -eq 0 ]]; then
@@ -90,6 +96,16 @@ ensure_panel_api_key() {
     return 0
 }
 
+save_admin_credentials() {
+    [[ "$PANEL_ADMIN_CREATED" -eq 1 ]] || return 0
+    local file="${ADMIN_CREDENTIALS_FILE:-/root/hydrodactyl-admin.txt}"
+    if (umask 077; printf 'email=%s\npassword=%s\n' "$PANEL_ADMIN_EMAIL" "$PANEL_ADMIN_PASSWORD" >"$file") 2>/dev/null; then
+        info "$(t msg_admin_saved "$file")"
+    else
+        warn "$(t msg_admin_save_failed "$file")"
+    fi
+}
+
 panel_test_server_allocation() {
     local alloc_json alloc_id
     alloc_json="$(panel_api GET \
@@ -112,13 +128,13 @@ panel_test_server_allocation() {
 }
 
 panel_test_server_egg() {
-    local nests nest eggs egg_json
+    local pattern="$1" nests nest eggs egg_json
     nests="$(panel_api GET "/api/application/nests?per_page=100")" || return 1
     egg_json=''
     while IFS= read -r nest; do
         eggs="$(panel_api GET "/api/application/nests/$nest/eggs?per_page=100&include=variables")" || continue
-        egg_json="$(printf '%s' "$eggs" | jq -c \
-            '.data[] | select(.attributes.name | test("vanilla minecraft"; "i"))' | head -n1)"
+        egg_json="$(printf '%s' "$eggs" | jq -c --arg pattern "$pattern" \
+            '.data[] | select(.attributes.name | test($pattern; "i"))' | head -n1)"
         if [[ -n "$egg_json" ]]; then
             break
         fi
@@ -133,9 +149,9 @@ create_test_server() {
     fi
     has_cmd jq || pkg_install jq
 
-    local existing
+    local external_id="hydrodactyl-test-$TEST_SERVER_PORT" existing
     if existing="$(panel_api GET \
-        "/api/application/servers?filter%5Bexternal_id%5D=hydrodactyl-test&per_page=1")"; then
+        "/api/application/servers?filter%5Bexternal_id%5D=$external_id&per_page=1")"; then
         if [[ "$(printf '%s' "$existing" | jq -r '.meta.total // 0')" -gt 0 ]]; then
             SUMMARY_TEST_SERVER="$(printf '%s' "$existing" | jq -r '.data[0].attributes.name // empty')"
             if [[ -z "$SUMMARY_TEST_SERVER" ]]; then
@@ -160,7 +176,7 @@ create_test_server() {
 
     local alloc_id egg_json egg_id image startup env_json payload response
     alloc_id="$(panel_test_server_allocation)" || return 1
-    egg_json="$(panel_test_server_egg)" || return 1
+    egg_json="$(panel_test_server_egg "$TEST_SERVER_EGG")" || return 1
 
     egg_id="$(printf '%s' "$egg_json" | jq -r '.attributes.id')"
     image="$(printf '%s' "$egg_json" | jq -r \
@@ -175,15 +191,18 @@ create_test_server() {
 
     payload="$(jq -n \
         --arg name "$(t test_server_name)" \
+        --arg external "$external_id" \
         --argjson user "$PANEL_ADMIN_USER_ID" \
         --argjson egg "$egg_id" \
         --arg image "$image" \
         --arg startup "$startup" \
         --argjson env "$env_json" \
         --argjson alloc "$alloc_id" \
-        '{name: $name, external_id: "hydrodactyl-test", user: $user, egg: $egg,
+        --argjson memory "$TEST_SERVER_MEMORY" \
+        --argjson disk "$TEST_SERVER_DISK" \
+        '{name: $name, external_id: $external, user: $user, egg: $egg,
           docker_image: $image, startup: $startup, environment: $env,
-          limits: {memory: 1024, swap: 0, disk: 5120, io: 500, cpu: 100, threads: 0},
+          limits: {memory: $memory, swap: 0, disk: $disk, io: 500, cpu: 100, threads: 0},
           feature_limits: {databases: 0, allocations: 0, backups: 0, backup_storage_mb: 0},
           allocation: {default: $alloc}, start_on_completion: true}')" || return 1
 

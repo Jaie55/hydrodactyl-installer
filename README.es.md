@@ -27,7 +27,7 @@
     <img src="https://shieldcn.dev/badge/Shellcheck-Passing-success.svg?logo=githubactions" alt="Shellcheck">
   </a>
   <a href="https://github.com/Jaie55/hydrodactyl-installer/releases">
-    <img src="https://shieldcn.dev/badge/Release-v0.8.0-181717.svg?logo=github" alt="Última release: v0.8.0">
+    <img src="https://shieldcn.dev/badge/Release-v0.9.0-181717.svg?logo=github" alt="Última release: v0.9.0">
   </a>
   <img src="https://shieldcn.dev/badge/Hecho%20con-Bash-1f425f.svg?logo=gnubash" alt="Hecho con Bash">
   <img src="https://shieldcn.dev/badge/Plataforma-Linux-f0b429.svg?logo=linux" alt="Plataforma Linux">
@@ -46,7 +46,7 @@ Este script no está asociado con los proyectos oficiales de Hydrodactyl,
 Blueprint ni Pterodactyl.
 
 > [!NOTE]
-> La v0.8.0 es una versión temprana. El instalador se ha validado de forma
+> La v0.9.0 es una versión temprana. El instalador se ha validado de forma
 > estática (`bash -n`, Shellcheck, paridad de claves EN/ES); pruébalo en una VM
 > desechable antes de usarlo en una máquina de producción.
 
@@ -59,9 +59,13 @@ Blueprint ni Pterodactyl.
   `--update`).
 - **Desinstalador** — elimina el panel y/o los daemons, sus servicios y su
   configuración (`--uninstall`, `--purge` para borrar bases de datos y datos).
-- **Nodo automático** — con una API key de aplicación del panel crea la
-  localización, el nodo y las asignaciones de puertos por API, descarga la
-  configuración del nodo y arranca el daemon.
+- **Nodo automático** — el instalador crea la API key de aplicación
+  automáticamente para un panel local, crea o reutiliza el nodo, añade solo las
+  asignaciones que faltan, descarga la configuración del nodo y arranca el
+  daemon. También crea el primer administrador si el panel no tiene usuarios.
+- **Servidor de prueba opcional** — pregunta si crear un servidor
+  Vanilla/Paper en el puerto 25565 (configurable) usando la IP del nodo, y lo
+  arranca.
 - **Detección y resumen** — indica qué hay ya instalado (y su versión) antes de
   empezar y muestra un resumen con la URL del panel y las opciones elegidas al
   terminar.
@@ -117,6 +121,9 @@ apt update && apt install -y curl
 bash <(curl -fsSL https://raw.githubusercontent.com/Jaie55/hydrodactyl-installer/main/install.sh)
 ```
 
+Para fijar el instalador a un tag o rama, define `HYDRODACTYL_SCRIPT_REF` (por
+ejemplo `HYDRODACTYL_SCRIPT_REF=v0.9.0 bash <(curl ...)`).
+
 Si `curl` ya está instalado, solo hace falta la última línea. Una vez en
 ejecución, el script instala por su cuenta cualquier dependencia que falte. En
 modo interactivo pregunta si quieres una instalación **básica** (por defecto) o
@@ -159,7 +166,7 @@ sudo bash install.sh --daemon=wings --panel-url=http://127.0.0.1 --api-key=ptla_
 | `--db-name=NAME`                   | Nombre de la base de datos (por defecto `panel`)                                 |
 | `--db-user=USER`                   | Usuario de la base de datos (por defecto `hydrodactyl`)                          |
 | `--db-password=PASS`               | Contraseña de la base de datos (por defecto: generada)                           |
-| `--php=8.3\|8.4\|8.5`              | Versión de PHP para la instalación nativa (por defecto `8.4`)                    |
+| `--php=8.4\|8.5`                   | Versión de PHP para la instalación nativa (por defecto `8.4`)                    |
 | `--timezone=TZ`                    | Zona horaria de la aplicación (por defecto `UTC`)                               |
 | `--locale=LOCALE`                  | Locale de la aplicación (por defecto `en-US`)                                   |
 | `--http-port=PORT`                 | Puerto HTTP (por defecto `80`)                                                  |
@@ -171,39 +178,55 @@ sudo bash install.sh --daemon=wings --panel-url=http://127.0.0.1 --api-key=ptla_
 | `--sftp-port=PORT`                 | Puerto SFTP (por defecto `2022`)                                                |
 | `--node-scheme=http\|https`        | Esquema panel -> daemon (por defecto `http`)                                    |
 | `--behind-proxy`                   | El nodo está detrás de un proxy                                                 |
-| `--panel-url=URL`                  | URL del panel para configurar el nodo (por defecto `http://127.0.0.1`)            |
-| `--api-key=KEY`                    | API key de aplicación del panel (se pregunta si se omite)                        |
+| `--panel-url=URL`                  | URL del panel para configurar el nodo (por defecto: la detectada)                 |
+| `--api-key=KEY`                    | API key de aplicación del panel (se crea automáticamente para un panel local)    |
 | `--node-name=NAME`                 | Nombre del nodo (por defecto: hostname)                                          |
 | `--node-fqdn=HOST`                 | FQDN/IP del nodo accesible desde el panel (por defecto: IP primaria)             |
 | `--memory=MB` / `--disk=MB`        | Recursos del nodo (por defecto: detectados)                                      |
 | `--ports=LIST`                     | Asignaciones separadas por comas (por defecto `25565-25665,27015-27150`)          |
 | `--no-node`                        | No crear el nodo automáticamente                                                 |
+| `--test-server` / `--no-test-server` | Crear un servidor de prueba Minecraft en el puerto 25565 (u omitirlo)          |
+| `--test-server-egg=EGG`            | Egg del servidor de prueba (por defecto `vanilla`)                              |
+| `--test-server-port=PORT`          | Puerto del servidor de prueba (por defecto `25565`)                             |
+| `--test-server-memory=MB`          | Memoria del servidor de prueba en MiB (por defecto `1024`)                      |
+| `--test-server-disk=MB`            | Disco del servidor de prueba en MiB (por defecto `5120`)                        |
+| `--admin-email=EMAIL`              | Email del primer administrador (por defecto `admin@example.com`)                 |
+| `--admin-username=NAME`            | Usuario del primer administrador (por defecto `admin`)                           |
+| `--admin-password=PASS`            | Contraseña del primer administrador (por defecto: generada)                      |
+| `--no-auto-admin`                  | No crear el primer administrador automáticamente                                 |
 | `--check-updates`                  | Muestra las versiones instaladas y las últimas de panel/daemon                   |
 | `--update[=panel\|daemon]`         | Actualiza el panel y/o los daemons detectados                                    |
 | `--uninstall[=panel\|daemon\|all\|wings\|elytra]` | Desinstala los objetivos indicados                              |
 | `--purge`                          | Con `--uninstall`, borra también la base de datos y los directorios de datos     |
 | `--ssl`                            | Pide un certificado gratuito con Let's Encrypt                                  |
 | `--no-verify`                      | Omite la comprobación final de que el panel responde (CI/pruebas locales)        |
+| `--dry-run`                        | Muestra el plan y sale sin instalar                                             |
+| `--version`                        | Muestra la versión del instalador                                               |
 | `--lang=en\|es`                    | Idioma de la interfaz                                                            |
-| `-y`, `--yes`                      | No interactivo, asume sí                                                         |
+| `-y`, `--yes`                      | No interactivo, usa los valores por defecto                                      |
 | `-h`, `--help`                     | Muestra la ayuda                                                                 |
 
 ## Nodo automático
 
-El daemon se puede configurar sin copiar nada a mano. Crea una **API key de
-aplicación** en el panel (Admin → Application API → Create) y el instalador:
+El daemon se puede configurar sin copiar nada a mano. Cuando el panel está en la
+misma máquina, el instalador crea la API key de aplicación automáticamente (con
+permisos limitados) y:
 
-1. crea una localización si el panel no tiene ninguna,
-2. crea el nodo con la memoria, disco y FQDN detectados (o indicados),
-3. crea las asignaciones de puertos,
-4. ejecuta `wings configure` / `elytra configure` para descargar la
-   configuración del nodo, y
-5. arranca el servicio systemd.
+1. crea el primer usuario administrador si el panel no tiene ninguno (las
+   credenciales se muestran en el resumen y se guardan en
+   `/root/hydrodactyl-admin.txt`),
+2. crea una localización si el panel no tiene ninguna,
+3. reutiliza un nodo existente con el mismo FQDN o crea uno nuevo,
+4. crea solo las asignaciones de puertos que faltan,
+5. ejecuta `wings configure` / `elytra configure` para descargar la
+   configuración del nodo,
+6. arranca el servicio systemd y comprueba que está escuchando, y
+7. opcionalmente crea un servidor de prueba Minecraft en el puerto 25565.
 
-Para un panel en la misma máquina usa `--panel-url=http://127.0.0.1`. Sin key la
-unidad se crea pero no se arranca: pega la configuración del nodo desde el panel
-en `/etc/pterodactyl/config.yml` y ejecuta `systemctl restart wings` (o
-`elytra`).
+Para un panel remoto, crea una API key de aplicación en el panel y pásala con
+`--api-key`; el instalador seguirá creando el nodo y las asignaciones. Si no se
+puede configurar el nodo, pega la configuración desde el panel en
+`/etc/pterodactyl/config.yml` y ejecuta `systemctl restart wings` (o `elytra`).
 
 ## Actualizar el panel y los daemons
 
@@ -290,18 +313,39 @@ elegida.
 
 ## Después de instalar
 
-Abre la URL del panel, completa el asistente de configuración (primer usuario
-administrador) y, para los daemons, crea un nodo en el panel o deja que el
-instalador lo cree con una API key de aplicación.
+El instalador crea el primer administrador automáticamente si el panel no tiene
+usuarios; el email y la contraseña generada se muestran en el resumen y se
+guardan en `/root/hydrodactyl-admin.txt`. Cambia la contraseña al entrar. La API
+key y el nodo se crean automáticamente para paneles locales. Si pediste un
+servidor de prueba, conéctate a `<ip-del-nodo>:25565`.
+
+## Solución de problemas
+
+- **WebSocket de Wings 403 / `request origin not allowed`**: Wings solo acepta
+  el origen del navegador que coincide con su URL `remote` del panel. Usa en el
+  navegador la misma URL que el panel (`APP_URL`). Vuelve a ejecutar el
+  instalador o edita `/etc/pterodactyl/config.yml` (`remote: http://localhost`)
+  y ejecuta `systemctl restart wings`.
+- **Wings no escucha en 8080**: `systemctl status wings`,
+  `journalctl -u wings -n 100 --no-pager`, `ss -ltnp | grep -E ':8080|:2022'`.
+  Comprueba que Docker está en marcha (`docker info`).
+- **Panel local inaccesible desde la LAN**: `localhost` solo funciona en el
+  servidor. Usa `--domain=<ip-del-servidor>` y accede por esa IP.
+- **Let's Encrypt falla**: el dominio debe resolver al servidor y el puerto 80
+  debe ser accesible desde internet.
+- **Actualización Docker**: haz una copia de seguridad de la base de datos antes
+  de ejecutar `--update`.
 
 ## Desarrollo y pruebas
 
 - Comprueba la sintaxis de todos los scripts:
 
 ```bash
-for f in install.sh lib/*.sh lib/modes/*.sh lang/*.sh; do bash -n "$f"; done
+for f in install.sh lib/*.sh lib/modes/*.sh lang/*.sh tests/*.sh; do bash -n "$f"; done
 ```
 
+- Tests unitarios: `bash tests/run.sh` (requiere `jq`).
+- Sintaxis PHP: `php -l config/panel-key.php`.
 - [Shellcheck](https://www.shellcheck.net/) se ejecuta en CI
   (`.github/workflows/shellcheck.yml`).
 - El instalador está pensado para probarse en una VM o contenedor nuevos con
