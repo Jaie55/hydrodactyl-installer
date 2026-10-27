@@ -482,7 +482,7 @@ choose_install_type() {
 }
 
 choose_advanced() {
-    [[ "$INSTALL_TYPE" == "custom" ]] || return
+    [[ "$INSTALL_TYPE" == "custom" ]] || return 0
     if [[ "$ASSUME_YES" -eq 1 || ! -t 0 ]]; then
         return
     fi
