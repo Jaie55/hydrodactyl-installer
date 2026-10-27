@@ -3,6 +3,16 @@
 
 PANEL_UPSTREAM_REPO="https://github.com/blueprintframework/hydrodactyl"
 
+normalize_custom_repo() {
+    local url="${1%/}"
+    if [[ "$url" =~ ^https?://(www\.)?github\.com/([^/]+)/([^/]+)/tree/(.+)$ ]]; then
+        CUSTOM_REPO="https://github.com/${BASH_REMATCH[2]}/${BASH_REMATCH[3]}"
+        [[ -n "$CUSTOM_REF" ]] || CUSTOM_REF="${BASH_REMATCH[4]}"
+    else
+        CUSTOM_REPO="${url%.git}"
+    fi
+}
+
 # Resolve PANEL_REPO and PANEL_REF from SOURCE.
 resolve_panel_ref() {
     case "$SOURCE" in

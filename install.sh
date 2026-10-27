@@ -540,6 +540,7 @@ choose_advanced() {
 choose_source() {
     if [[ "$SOURCE" == "custom" ]]; then
         if [[ -z "$CUSTOM_REPO" ]]; then ask CUSTOM_REPO "$(t prompt_repo_url)"; fi
+        normalize_custom_repo "$CUSTOM_REPO"
         if [[ -z "$CUSTOM_REF" ]]; then ask CUSTOM_REF "$(t prompt_repo_ref)" "main"; fi
         [[ -n "$CUSTOM_REPO" ]] || die "$(t prompt_repo_url)"
         return
@@ -559,7 +560,10 @@ choose_source() {
         3)
             SOURCE=custom
             ask CUSTOM_REPO "$(t prompt_repo_url)"
-            ask CUSTOM_REF "$(t prompt_repo_ref)" "main"
+            normalize_custom_repo "$CUSTOM_REPO"
+            if [[ -z "$CUSTOM_REF" ]]; then
+                ask CUSTOM_REF "$(t prompt_repo_ref)" "main"
+            fi
             ;;
         *) die "$(t msg_invalid_choice)" ;;
     esac
