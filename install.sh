@@ -38,15 +38,20 @@ fi
 # tarball and continue from there.
 if [[ ! -f "$SCRIPT_DIR/lib/common.sh" ]]; then
     BOOTSTRAP_DIR="$(mktemp -d)"
-    trap 'rm -rf "$BOOTSTRAP_DIR"' EXIT
     printf 'Downloading %s (%s)...\n' "$REPO_SLUG" "$SCRIPT_REF"
     curl -fsSL "https://github.com/$REPO_SLUG/archive/refs/heads/$SCRIPT_REF.tar.gz" |
         tar -xz -C "$BOOTSTRAP_DIR" --strip-components=1 ||
         {
+            rm -rf "$BOOTSTRAP_DIR"
             printf 'Failed to download the installer.\n' >&2
             exit 1
         }
-    SCRIPT_DIR="$BOOTSTRAP_DIR"
+    export HYDRODACTYL_BOOTSTRAP_DIR="$BOOTSTRAP_DIR"
+    exec "${BASH:-bash}" "$BOOTSTRAP_DIR/install.sh" "$@"
+fi
+
+if [[ -n "${HYDRODACTYL_BOOTSTRAP_DIR:-}" ]]; then
+    trap 'rm -rf "$HYDRODACTYL_BOOTSTRAP_DIR"' EXIT
 fi
 
 # shellcheck source=lib/common.sh
@@ -63,6 +68,8 @@ source "$SCRIPT_DIR/lib/modes/native.sh"
 source "$SCRIPT_DIR/lib/daemons.sh"
 # shellcheck source=lib/maintenance.sh
 source "$SCRIPT_DIR/lib/maintenance.sh"
+# shellcheck source=lib/panel.sh
+source "$SCRIPT_DIR/lib/panel.sh"
 
 MODE=""
 LANG_CHOICE=""
@@ -89,6 +96,17 @@ DAEMON_CONFIG=""
 AUTO_NODE="1"
 PANEL_URL=""
 DETECTED_PANEL_URL=""
+PANEL_PHP_BIN=""
+PANEL_ADMIN_USER_ID=""
+PANEL_ADMIN_EMAIL=""
+PANEL_ADMIN_USER=""
+PANEL_ADMIN_FIRST=""
+PANEL_ADMIN_LAST=""
+PANEL_ADMIN_PASSWORD=""
+PANEL_ADMIN_CREATED="0"
+TEST_SERVER="ask"
+TEST_SERVER_PORT="25565"
+NODE_ID=""
 API_KEY=""
 NODE_NAME=""
 NODE_FQDN=""
@@ -118,6 +136,8 @@ SUMMARY_DAEMON_VERSION=""
 SUMMARY_NODE=""
 SUMMARY_NODE_FQDN=""
 SUMMARY_AUTO_NODE="0"
+SUMMARY_TEST_SERVER=""
+SUMMARY_TEST_SERVER_URL=""
 
 usage() {
     cat <<EOF
@@ -167,6 +187,8 @@ Daemon
                             (default: 25565-25665,27015-27150)
   --no-node                 Do not create the node automatically
   --panel                   Install the panel too (used with --daemon)
+  --test-server             Create a Minecraft test server on port 25565
+  --no-test-server          Do not offer the Minecraft test server
 
 Maintenance
   --check-updates           Show installed and latest versions
@@ -207,6 +229,8 @@ parse_args() {
             --disk=*) NODE_DISK="${1#*=}" ;;
             --ports=*) NODE_PORTS="${1#*=}" ;;
             --no-node) AUTO_NODE=0 ;;
+            --test-server) TEST_SERVER=1 ;;
+            --no-test-server) TEST_SERVER=0 ;;
             --source=*) SOURCE="${1#*=}" ;;
             --repo=*) CUSTOM_REPO="${1#*=}"; SOURCE=custom ;;
             --ref=*) CUSTOM_REF="${1#*=}" ;;
@@ -463,6 +487,15 @@ print_summary() {
             info "$(t summary_node_manual)"
         fi
     fi
+
+    if [[ -n "$SUMMARY_TEST_SERVER_URL" ]]; then
+        info "$(t summary_test_server "$SUMMARY_TEST_SERVER" "$SUMMARY_TEST_SERVER_URL")"
+    fi
+
+    if [[ "$PANEL_ADMIN_CREATED" -eq 1 ]]; then
+        printf '\n%s%s%s\n' "$C_BOLD" "$(t summary_admin "$PANEL_ADMIN_EMAIL" "$PANEL_ADMIN_PASSWORD")" "$C_RESET"
+        printf '%s\n' "$(t msg_admin_password_hint)"
+    fi
 }
 
 choose_install_type() {
@@ -636,10 +669,16 @@ main() {
         esac
     fi
 
-    if [[ "$INSTALL_PANEL" == "1" && "$INSTALL_DAEMON" == "1" && "$AUTO_NODE" -eq 1 &&
-        "$ASSUME_YES" -eq 0 && -t 0 ]]; then
-        info "$(t msg_finish_setup)"
-        read -r -p "$(t msg_press_enter) " _ || true
+    if [[ "$INSTALL_DAEMON" == "1" && "$AUTO_NODE" -eq 1 && -z "$API_KEY" && -z "$PANEL_URL" ]]; then
+        if local_panel_available; then
+            if ! ensure_panel_api_key 1; then
+                if [[ "$INSTALL_PANEL" == "1" && "$ASSUME_YES" -eq 0 && -t 0 ]]; then
+                    info "$(t msg_finish_setup)"
+                    read -r -p "$(t msg_press_enter) " _ || true
+                    ensure_panel_api_key || true
+                fi
+            fi
+        fi
     fi
 
     if [[ "$INSTALL_PANEL" != "1" && "$INSTALL_DAEMON" == "1" ]]; then
@@ -648,6 +687,32 @@ main() {
 
     if [[ "$INSTALL_DAEMON" == "1" ]]; then
         install_daemon "${DAEMON_TYPE:-wings}"
+    fi
+
+    if [[ "$INSTALL_DAEMON" == "1" && "$SUMMARY_AUTO_NODE" -eq 1 ]]; then
+        if [[ "$TEST_SERVER" == "ask" ]]; then
+            if [[ "$ASSUME_YES" -eq 1 || ! -t 0 ]]; then
+                TEST_SERVER=0
+            elif confirm "$(t prompt_test_server)" y; then
+                TEST_SERVER=1
+            else
+                TEST_SERVER=0
+            fi
+        fi
+        if [[ "$TEST_SERVER" -eq 1 ]]; then
+            local attempt=1 created=0
+            while [[ "$attempt" -le 5 ]]; do
+                if create_test_server; then
+                    created=1
+                    break
+                fi
+                sleep 3
+                attempt=$((attempt + 1))
+            done
+            if [[ "$created" -eq 0 ]]; then
+                warn "$(t msg_test_server_failed)"
+            fi
+        fi
     fi
 
     print_summary

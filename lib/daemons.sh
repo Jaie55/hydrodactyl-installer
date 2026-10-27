@@ -83,7 +83,11 @@ auto_configure_node() {
 
     if [[ -z "$PANEL_URL" ]]; then
         local default_panel_url="${SUMMARY_PANEL_URL:-${DETECTED_PANEL_URL:-http://127.0.0.1}}"
-        ask PANEL_URL "$(t prompt_panel_url)" "$default_panel_url"
+        if [[ -n "$SUMMARY_PANEL_URL" || -n "$DETECTED_PANEL_URL" ]]; then
+            PANEL_URL="$default_panel_url"
+        else
+            ask PANEL_URL "$(t prompt_panel_url)" "$default_panel_url"
+        fi
     fi
     [[ "$PANEL_URL" == *://* ]] || PANEL_URL="http://$PANEL_URL"
     PANEL_URL="${PANEL_URL%/}"
@@ -104,7 +108,11 @@ auto_configure_node() {
     default_fqdn="$(primary_ip)"
     [[ -n "$default_fqdn" ]] || default_fqdn="$(hostname -f 2>/dev/null || hostname)"
     if [[ -z "$NODE_FQDN" ]]; then
-        ask NODE_FQDN "$(t prompt_node_fqdn)" "$default_fqdn"
+        if [[ -n "$SUMMARY_PANEL_URL" || -n "$DETECTED_PANEL_URL" ]]; then
+            NODE_FQDN="$default_fqdn"
+        else
+            ask NODE_FQDN "$(t prompt_node_fqdn)" "$default_fqdn"
+        fi
     fi
     [[ -n "$NODE_FQDN" ]] || NODE_FQDN="$default_fqdn"
 
@@ -165,6 +173,7 @@ auto_configure_node() {
         warn "$(t msg_api_failed)"
         return 1
     fi
+    NODE_ID="$node_id"
     info "$(t msg_node_created "$node_id")"
 
     payload="$(jq -n --argjson ports "$(ports_json)" '{ip: "0.0.0.0", ports: $ports}')"
@@ -253,7 +262,7 @@ EOF
         return
     fi
 
-    if [[ "$AUTO_NODE" -eq 1 ]] && confirm "$(t confirm_auto_node)" y; then
+    if [[ "$AUTO_NODE" -eq 1 ]] && { [[ -n "$API_KEY" ]] || confirm "$(t confirm_auto_node)" y; }; then
         if auto_configure_node "$type" "$bin"; then
             systemctl enable --now "$bin"
             mapfile -t fw_ports < <(daemon_firewall_ports)

@@ -12,6 +12,7 @@ install_panel_native() {
     fi
 
     local PHP_BIN="/usr/bin/php${PHP_VERSION}"
+    PANEL_PHP_BIN="$PHP_BIN"
     local codename="$DISTRO_CODENAME"
     local use_sury=0
     step "$(t step_panel_native)"
