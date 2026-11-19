@@ -6,6 +6,28 @@
 
 WEB_USER="www-data"
 
+# reset_stale_database DB_NAME -> warn, ask and drop/recreate the database when
+# its encrypted data cannot be read with the current APP_KEY.
+reset_stale_database() {
+    local db_name="$1" reset=0
+    warn "$(t warn_stale_db "$db_name")"
+    if [[ "$RESET_DB" -eq 1 ]]; then
+        reset=1
+    elif [[ "$ASSUME_YES" -eq 0 ]] && confirm "$(t confirm_db_reset "$db_name")" n; then
+        reset=1
+    fi
+    if [[ "$reset" -eq 0 ]]; then
+        die "$(t err_stale_db "$db_name")"
+    fi
+    mysql -e "DROP DATABASE IF EXISTS \`$db_name\`; CREATE DATABASE \`$db_name\`;" ||
+        die "$(t msg_db_drop_failed)"
+    if has_cmd redis-cli; then
+        redis-cli flushdb >/dev/null 2>&1 || true
+    fi
+    STALE_DB_RESET=1
+    info "$(t msg_db_reset "$db_name")"
+}
+
 install_panel_native() {
     if [[ "$FAMILY" != "debian" ]]; then
         die "$(t msg_native_only_debian "$DISTRO_NAME")"
@@ -112,6 +134,23 @@ install_panel_native() {
         dbpass="$(grep -E '^DB_PASSWORD=' "$PANEL_DIR/.env" | head -n1 | cut -d= -f2-)"
     fi
     [[ -n "$dbpass" ]] || dbpass="$(random_password)"
+
+    # A leftover database without its .env cannot be decrypted with a newly
+    # generated APP_KEY (node tokens, API keys, database passwords, 2FA...).
+    local db_tables='0' old_key=''
+    db_tables="$(mysql -N -B -e \
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '${DB_NAME}'" \
+        2>/dev/null || true)"
+    if [[ "${db_tables:-0}" -gt 0 ]]; then
+        if [[ -f "$PANEL_DIR/.env" ]]; then
+            old_key="$(grep -E '^APP_KEY=base64:.+' "$PANEL_DIR/.env" |
+                head -n1 | cut -d= -f2- || true)"
+        fi
+        if [[ -z "$old_key" ]]; then
+            reset_stale_database "$DB_NAME"
+        fi
+    fi
+
     mysql -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`;
         CREATE USER IF NOT EXISTS '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${dbpass}';
         ALTER USER '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${dbpass}';
@@ -149,6 +188,18 @@ install_panel_native() {
     fi
 
     COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+    # Drop any cached config from a previous checkout before booting the panel.
+    "$PHP_BIN" artisan optimize:clear >/dev/null 2>&1 || true
+
+    # .env may exist but hold a different APP_KEY than the one that encrypted
+    # the database (e.g. after re-cloning over a previous panel). Verify it.
+    local stale_key=0
+    "$PHP_BIN" "$SCRIPT_DIR/config/panel-check.php" || stale_key=$?
+    if [[ "$stale_key" -eq 2 ]]; then
+        reset_stale_database "$DB_NAME"
+    fi
+
     pnpm install --frozen-lockfile
     pnpm run build
 

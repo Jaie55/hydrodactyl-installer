@@ -164,6 +164,7 @@ sudo bash install.sh --daemon=wings --panel-url=http://127.0.0.1 --api-key=ptla_
 | `--db-name=NAME`                 | Database name (default `panel`)                                             |
 | `--db-user=USER`                 | Database user (default `hydrodactyl`)                                       |
 | `--db-password=PASS`             | Database password (default: generated)                                      |
+| `--reset-db`                     | Delete a leftover native database when its `.env`/APP_KEY is invalid      |
 | `--php=8.4\|8.5`                 | PHP version for the native install (default `8.4`)                          |
 | `--timezone=TZ`                  | Application timezone (default `UTC`)                                        |
 | `--locale=LOCALE`                | Application locale (default `en-US`)                                        |
@@ -330,6 +331,13 @@ asked for a test server, connect to `<node-ip>:25565`.
 - **Let's Encrypt fails**: the domain must resolve to the server and port 80
   must be reachable from the internet.
 - **Docker update**: back up the database before running `--update`.
+- **HTTP 500 creating the node after a reinstall**: a previous database was
+  kept without its `.env`/APP_KEY. Re-run the installer and accept the database
+  reset, or pass `--reset-db`.
+- **`getcwd: cannot access parent directories`**: you are running the installer
+  from a directory that no longer exists (for example, the panel directory).
+  The installer switches to `/` automatically, but running it from `/root` or
+  `/tmp` is recommended.
 
 ## Development & testing
 
@@ -340,7 +348,7 @@ for f in install.sh lib/*.sh lib/modes/*.sh lang/*.sh tests/*.sh; do bash -n "$f
 ```
 
 - Unit tests: `bash tests/run.sh` (requires `jq`).
-- PHP syntax: `php -l config/panel-key.php`.
+- PHP syntax: `php -l config/panel-key.php` and `php -l config/panel-check.php`.
 - [Shellcheck](https://www.shellcheck.net/) runs in CI
   (`.github/workflows/shellcheck.yml`).
 - The installer is meant to be tested on a fresh VM or container with systemd.

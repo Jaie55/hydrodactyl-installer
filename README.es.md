@@ -166,6 +166,7 @@ sudo bash install.sh --daemon=wings --panel-url=http://127.0.0.1 --api-key=hydro
 | `--db-name=NAME`                   | Nombre de la base de datos (por defecto `panel`)                                 |
 | `--db-user=USER`                   | Usuario de la base de datos (por defecto `hydrodactyl`)                          |
 | `--db-password=PASS`               | Contraseña de la base de datos (por defecto: generada)                           |
+| `--reset-db`                       | Borra una base de datos nativa anterior si su `.env`/APP_KEY no es válido       |
 | `--php=8.4\|8.5`                   | Versión de PHP para la instalación nativa (por defecto `8.4`)                    |
 | `--timezone=TZ`                    | Zona horaria de la aplicación (por defecto `UTC`)                               |
 | `--locale=LOCALE`                  | Configuración regional de la aplicación (por defecto `en-US`)                   |
@@ -335,6 +336,13 @@ servidor de prueba, conéctate a `<ip-del-nodo>:25565`.
   debe ser accesible desde internet.
 - **Actualización Docker**: haz una copia de seguridad de la base de datos antes
   de ejecutar `--update`.
+- **HTTP 500 al crear el nodo tras reinstalar**: se conservó una base de datos
+  anterior sin su `.env`/APP_KEY. Vuelve a ejecutar el instalador y acepta el
+  borrado de la base de datos, o usa `--reset-db`.
+- **`getcwd: cannot access parent directories`**: estás ejecutando el instalador
+  desde un directorio que ya no existe (por ejemplo, el directorio del panel).
+  El instalador cambia a `/` automáticamente, pero lo ideal es ejecutarlo desde
+  `/root` o `/tmp`.
 
 ## Desarrollo y pruebas
 
@@ -345,7 +353,7 @@ for f in install.sh lib/*.sh lib/modes/*.sh lang/*.sh tests/*.sh; do bash -n "$f
 ```
 
 - Pruebas unitarias: `bash tests/run.sh` (requiere `jq`).
-- Sintaxis de PHP: `php -l config/panel-key.php`.
+- Sintaxis de PHP: `php -l config/panel-key.php` y `php -l config/panel-check.php`.
 - [Shellcheck](https://www.shellcheck.net/) se ejecuta en CI
   (`.github/workflows/shellcheck.yml`).
 - El instalador está pensado para probarse en una VM o un contenedor nuevos con

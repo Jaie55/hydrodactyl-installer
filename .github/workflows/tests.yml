@@ -18,7 +18,9 @@ jobs:
           done
 
       - name: PHP syntax
-        run: php -l config/panel-key.php
+        run: |
+          php -l config/panel-key.php
+          php -l config/panel-check.php
 
       - name: Unit tests
         run: bash tests/run.sh

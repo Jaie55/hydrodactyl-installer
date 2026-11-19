@@ -9,7 +9,10 @@ source install.sh
 
 if command -v jq >/dev/null 2>&1; then
     JQ_BIN="$(command -v jq)"
-    jq() { "$JQ_BIN" "$@" | tr -d '\r'; }
+    jq() {
+        "$JQ_BIN" "$@" | tr -d '\r'
+        return "${PIPESTATUS[0]}"
+    }
 fi
 
 fail=0
@@ -75,7 +78,7 @@ assert_eq "daemon url latest" "$(daemon_binary_url wings)" \
 
 parse_args --native --basic --environment=test --domain=localhost \
     --test-server --test-server-port=25566 --test-server-memory=2048 \
-    --test-server-disk=8192 --test-server-egg=paper \
+    --test-server-disk=8192 --test-server-egg=paper --reset-db \
     --admin-email=admin@example.com --admin-username=admin2 --dry-run
 assert_eq "parse mode" "$MODE" "native"
 assert_eq "parse test server port" "$TEST_SERVER_PORT" "25566"
@@ -84,6 +87,7 @@ assert_eq "parse test server disk" "$TEST_SERVER_DISK" "8192"
 assert_eq "parse test server egg" "$TEST_SERVER_EGG" "paper"
 assert_eq "parse admin email" "$ADMIN_EMAIL" "admin@example.com"
 assert_eq "parse admin username" "$ADMIN_USERNAME" "admin2"
+assert_eq "parse reset db" "$RESET_DB" "1"
 assert_eq "parse dry run" "$DRY_RUN" "1"
 
 NODE_PORTS="25565-25567,27015"
@@ -97,6 +101,20 @@ panel_api() {
 }
 ensure_node_allocations 1
 assert_eq "allocation payload" "$(jq -c . "$tmp/alloc.json")" '{"ip":"0.0.0.0","ports":["25567"]}'
+
+node_payload='{"name":"node1","location_id":1,"fqdn":"10.0.2.15","scheme":"http","behind_proxy":false,"public":true,"memory":2048,"memory_overallocate":0,"disk":20480,"disk_overallocate":0,"upload_size":100,"daemon_listen":8080,"daemon_sftp":2022,"maintenance_mode":false,"daemon_type":"wings"}'
+node_json='{"attributes":{"id":1,"name":"node1","location_id":1,"fqdn":"10.0.2.15","scheme":"http","behind_proxy":false,"public":true,"memory":2048,"memory_overallocate":0,"disk":20480,"disk_overallocate":0,"upload_size":100,"daemon_listen":8080,"daemon_sftp":2022,"maintenance_mode":false,"daemon_type":"wings"}}'
+if node_matches_payload "$node_json" "$node_payload"; then
+    pass "node matches desired values"
+else
+    bad "node matches desired values"
+fi
+node_changed="${node_json/2048/4096}"
+if node_matches_payload "$node_changed" "$node_payload"; then
+    bad "node detects changed values"
+else
+    pass "node detects changed values"
+fi
 
 API_KEY="test-key"
 PANEL_URL="http://localhost"

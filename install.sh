@@ -4,6 +4,11 @@
 # shellcheck disable=SC1091,SC2034 # libs are sourced at runtime and use these globals
 set -Eeuo pipefail
 
+if ! pwd -P >/dev/null 2>&1; then
+    cd / 2>/dev/null || cd "$HOME" 2>/dev/null || true
+    printf 'warning: the current directory no longer exists; continuing from %s\n' "$PWD" >&2
+fi
+
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
 INSTALLER_VERSION="0.9.0"
@@ -75,6 +80,8 @@ MODE=""
 LANG_CHOICE=""
 ACTION="install"
 PURGE="0"
+RESET_DB="0"
+STALE_DB_RESET="0"
 UPDATE_TARGET=""
 UNINSTALL_TARGET=""
 INSTALL_TYPE=""
@@ -171,6 +178,7 @@ Panel
   --db-name=NAME            Database name (default: panel)
   --db-user=USER            Database user (default: hydrodactyl)
   --db-password=PASS        Database password (default: generated)
+  --reset-db                Delete a leftover native database if its .env/APP_KEY is not usable
   --php=8.4|8.5             PHP version for the native install (default: 8.4)
   --timezone=TZ             Application timezone (default: UTC)
   --locale=LOCALE           Application locale (default: en-US)
@@ -269,6 +277,7 @@ parse_args() {
             --db-name=*) DB_NAME="${1#*=}" ;;
             --db-user=*) DB_USER="${1#*=}" ;;
             --db-password=*) DB_PASS="${1#*=}" ;;
+            --reset-db) RESET_DB=1 ;;
             --php=*) PHP_VERSION="${1#*=}" ;;
             --timezone=*) TIMEZONE="${1#*=}" ;;
             --locale=*) APP_LOCALE="${1#*=}" ;;

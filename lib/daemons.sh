@@ -101,8 +101,8 @@ primary_ip() {
 
 # panel_api METHOD PATH [JSON] -> curl against the panel application API.
 panel_api() {
-    local method="$1" path="$2" data="${3:-}" host port
-    local -a args=(-fsS -X "$method"
+    local method="$1" path="$2" data="${3:-}" host port out status
+    local -a args=(-sS -X "$method"
         -H "Authorization: Bearer $API_KEY"
         -H "Accept: Application/vnd.pterodactyl.v1+json")
     if [[ -n "$data" ]]; then
@@ -116,7 +116,15 @@ panel_api() {
         [[ "$PANEL_URL" == https://* ]] && port=443
         args+=(--resolve "$host:$port:127.0.0.1")
     fi
-    curl "${args[@]}" "${PANEL_URL}${path}"
+    out="$(curl "${args[@]}" -w $'\n%{http_code}' "${PANEL_URL}${path}")" || return 1
+    status="${out##*$'\n'}"
+    out="${out%$'\n'*}"
+    if [[ "$status" -lt 200 || "$status" -gt 299 ]]; then
+        warn "$(printf 'panel API %s %s returned HTTP %s\n%s' \
+            "$method" "$path" "$status" "${out:0:4000}")"
+        return 22
+    fi
+    printf '%s' "$out"
 }
 
 ensure_node_allocations() {
@@ -192,6 +200,22 @@ ensure_node_allocations() {
     else
         warn "$(t msg_alloc_failed)"
     fi
+}
+
+# node_matches_payload JSON PAYLOAD -> 0 when the existing node already has the
+# values the installer would send. Skips an update that would need Wings to be
+# running (the panel pushes the node configuration to the daemon on update).
+node_matches_payload() {
+    local node_json="$1" payload="$2"
+    jq -e --argjson desired "$payload" '
+        def norm: if . == null then null else tostring end;
+        .attributes as $node
+        | ["name", "location_id", "fqdn", "scheme", "behind_proxy", "public",
+           "memory", "memory_overallocate", "disk", "disk_overallocate",
+           "upload_size", "daemon_listen", "daemon_sftp", "maintenance_mode",
+           "daemon_type"]
+        | all(.[]; (($node[.] | norm) == ($desired[.] | norm)))
+    ' <<<"$node_json" >/dev/null 2>&1
 }
 
 # Create a location, a node and its allocations through the panel API, then
@@ -304,9 +328,10 @@ auto_configure_node() {
           maintenance_mode: false, daemon_type: $type}')" || return 1
 
     if [[ -n "$node_id" ]]; then
-        if ! response="$(panel_api PATCH "/api/application/nodes/$node_id" "$payload")"; then
-            warn "$(t msg_api_failed)"
-            return 1
+        if ! node_matches_payload "$existing_node" "$payload"; then
+            if ! response="$(panel_api PATCH "/api/application/nodes/$node_id" "$payload")"; then
+                warn "$(t msg_node_update_failed "$node_id")"
+            fi
         fi
     else
         if ! response="$(panel_api POST /api/application/nodes "$payload")"; then
@@ -413,7 +438,7 @@ WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
 
-    if [[ -f /etc/pterodactyl/config.yml ]]; then
+    if [[ -f /etc/pterodactyl/config.yml && "${STALE_DB_RESET:-0}" -ne 1 ]]; then
         systemctl enable --now "$bin"
         daemon_check "$bin" "$DAEMON_PORT" || true
         mapfile -t fw_ports < <(daemon_firewall_ports)

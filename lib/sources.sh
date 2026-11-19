@@ -18,7 +18,10 @@ resolve_panel_ref() {
     case "$SOURCE" in
         stable)
             local tag
-            tag="$(git ls-remote --tags --refs "$PANEL_UPSTREAM_REPO" 'v*' | awk -F/ '{print $NF}' | sort -V | tail -n1)"
+            if ! tag="$(git ls-remote --tags --refs "$PANEL_UPSTREAM_REPO" 'v*' |
+                awk -F/ '{print $NF}' | sort -V | tail -n1)"; then
+                die "$(t err_no_tags)"
+            fi
             [[ -n "$tag" ]] || die "$(t err_no_tags)"
             PANEL_REPO="$PANEL_UPSTREAM_REPO"
             PANEL_REF="$tag"
@@ -52,12 +55,33 @@ fetch_panel() {
     fi
 
     mkdir -p "$(dirname "$PANEL_DIR")"
+
+    # Re-cloning must not wipe the environment file: it holds APP_KEY and the
+    # database password, which are needed to read an existing database.
+    local env_backup=''
+    if [[ -f "$PANEL_DIR/.env" ]]; then
+        env_backup="$(mktemp 2>/dev/null || true)"
+        if [[ -n "$env_backup" ]]; then
+            if cp -a "$PANEL_DIR/.env" "$env_backup"; then
+                chmod 600 "$env_backup" 2>/dev/null || true
+            else
+                rm -f "$env_backup"
+                env_backup=''
+            fi
+        fi
+    fi
+
     rm -rf "$PANEL_DIR"
     git clone --depth=1 --branch "$PANEL_REF" "$PANEL_REPO" "$PANEL_DIR" ||
         {
             git clone --depth=1 "$PANEL_REPO" "$PANEL_DIR" &&
                 git -C "$PANEL_DIR" checkout "$PANEL_REF"
         }
+
+    if [[ -n "$env_backup" ]]; then
+        cp -a "$env_backup" "$PANEL_DIR/.env" || true
+        rm -f "$env_backup"
+    fi
 }
 
 # Fetch a file from the selected panel source (e.g. docker-compose.example.yml).
